@@ -23,7 +23,7 @@ from reportlab.lib.units import mm
 SIZE_ORDER = ["UNICA", "XXS", "XS", "S", "M", "L", "XL", "2XL", "3XL"]
 SIZE_ALIAS = {"XXL": "2XL", "2XL": "2XL"}
 
-APP_SUPPORT = Path.home() / "Library" / "Application Support" / "WUPI Suite"
+APP_SUPPORT = Path(__file__).resolve().parent / "wupi_data"
 STATE_PATH = APP_SUPPORT / "state_confirm.json"
 COSTS_PATH = APP_SUPPORT / "costs.json"
 BIBBIA_MANUAL_PATH = APP_SUPPORT / "bibbia_manual.json"
