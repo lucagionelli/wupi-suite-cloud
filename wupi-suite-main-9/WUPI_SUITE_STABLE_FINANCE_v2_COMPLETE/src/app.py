@@ -276,11 +276,14 @@ def pivot_report(df: pd.DataFrame) -> pd.DataFrame:
 
 def render_pivot_html(piv: pd.DataFrame, confirmed: set[str], subs: dict, file_stock: dict) -> None:
     view = piv.copy()
-    for c in [s for s in SIZE_ORDER if s in view.columns]:
+    
+    cols = list(view.columns)
+    # Troviamo dinamicamente tutte le taglie reali! (Tutto ciò che non è testo o Totale)
+    size_cols = [c for c in cols if c not in ["SKU", "Nome Prodotto", "Colore", "Totale"]]
+
+    for c in size_cols:
         view[c] = view[c].replace({0: ""})
     view["Totale"] = piv["Totale"].astype(int)
-
-    cols = list(view.columns)
 
     css = f"""<style>
 .table-wrap {{ overflow:auto; background-color: #ffffff; border: 1px solid #e5e5ea; border-radius: 12px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02); }}
@@ -307,7 +310,7 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
 
     for c in cols:
         cls = "tot" if c == "Totale" else ""
-        align = "center" if c in SIZE_ORDER + ["Totale"] else ""
+        align = "center" if c in size_cols + ["Totale"] else ""
         html.append(f'<th class="{cls} {align}">{c}</th>')
 
     html.append('</tr></thead><tbody>')
@@ -319,17 +322,15 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
         
         row_order_tot = 0
         row_stock_tot = 0
-        for sc in SIZE_ORDER:
-            if sc in cols:
-                val = r[sc]
-                if pd.notna(val) and val != "":
-                    val_int = int(val)
-                    stock_k = f"{sku_raw}||{col_raw}||{sc}"
-                    stock_qty = file_stock.get(stock_k, 0)
-                    row_stock_tot += stock_qty
-                    row_order_tot += max(0, val_int - stock_qty)
+        for sc in size_cols:
+            val = r[sc]
+            if pd.notna(val) and val != "":
+                val_int = int(val)
+                stock_k = f"{sku_raw}||{col_raw}||{sc}"
+                stock_qty = file_stock.get(stock_k, 0)
+                row_stock_tot += stock_qty
+                row_order_tot += max(0, val_int - stock_qty)
 
-        # Nuova Logica Colore: Azzurro se c'è stock, altrimenti Verde se confermato
         tr_cls = ""
         if row_stock_tot > 0:
             tr_cls = "warehouse"
@@ -340,13 +341,13 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
 
         for c in cols:
             cls = "tot" if c == "Totale" else ""
-            align = "center" if c in SIZE_ORDER + ["Totale"] else ""
+            align = "center" if c in size_cols + ["Totale"] else ""
             val = r[c]
             
             if c == "Totale":
                 val = row_order_tot if row_order_tot > 0 else ""
                 
-            elif c in SIZE_ORDER:
+            elif c in size_cols:
                 if pd.notna(val) and val != "":
                     val_int = int(val)
                     if val_int == 0:
@@ -357,7 +358,6 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
                         if stock_qty > 0:
                             order_qty = max(0, val_int - stock_qty)
                             if order_qty > 0:
-                                # Affiancato con uno spazio, niente <br>
                                 val = f"{order_qty} <span style='font-size:10.5px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
                             else:
                                 val = f"<span style='font-size:11px; color:#1976d2; font-weight:700;'>{stock_qty} mag</span>"
@@ -541,7 +541,8 @@ a, a:visited { color:#1d1d1f; }
 # -------------------------
 # PDF Ordine Fornitore
 # -------------------------
-def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -> bytes:
+def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, school: str, proj: str) -> bytes:
+    from reportlab.platypus import Image as RLImage
     buf = io.BytesIO()
     
     usable_width = A4[0] - 24 * mm
@@ -549,14 +550,45 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -
     elements = []
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, spaceAfter=12, textColor=colors.HexColor("#1d1d1f"))
-    sku_style = ParagraphStyle('SkuStyle', parent=styles['Heading2'], fontSize=13, spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#1d1d1f"))
+    # Nuovi stili
+    school_style = ParagraphStyle('SchoolStyle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor("#1d1d1f"), spaceAfter=0)
+    proj_style = ParagraphStyle('ProjStyle', parent=styles['Heading3'], fontSize=14, textColor=colors.HexColor("#86868b"), spaceBefore=0)
+    
+    sku_style = ParagraphStyle('SkuStyle', parent=styles['Heading2'], fontSize=13, spaceBefore=0, spaceAfter=0, textColor=colors.HexColor("#1d1d1f"))
+    right_tot_style = ParagraphStyle('RightTotStyle', parent=styles['Normal'], alignment=2, textColor=colors.HexColor("#86868b"), fontSize=11)
     centered_style = ParagraphStyle('CenteredStyle', parent=styles['Normal'], alignment=1, leading=10)
 
-    elements.append(Paragraph("Distinta Ordine Fornitore", title_style))
-
-    size_cols = [s for s in SIZE_ORDER if s in piv_df.columns]
+    # HEADER: Scuola e Tornata a sinistra, Logo a destra
+    left_p = [Paragraph(f"<b>{school}</b>", school_style), Paragraph(proj, proj_style)]
     
+    logo_img = ""
+    if LOGO_PATH.exists():
+        try:
+            im = Image.open(LOGO_PATH)
+            w, h = im.size
+            aspect = w / h
+            target_h = 14 * mm
+            target_w = target_h * aspect
+            logo_img = RLImage(str(LOGO_PATH), width=target_w, height=target_h)
+            logo_img.hAlign = 'RIGHT'
+        except:
+            logo_img = ""
+
+    header_t = Table([[left_p, logo_img]], colWidths=[usable_width - 60*mm, 60*mm])
+    header_t.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (1,0), (1,0), 'RIGHT'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+    ]))
+    
+    elements.append(header_t)
+    elements.append(Spacer(1, 10*mm)) # I due a capo richiesti
+
+    # Larghezze dinamiche basate sulle taglie reali
+    size_cols = [c for c in piv_df.columns if c not in ["SKU", "Nome Prodotto", "Colore", "Totale"]]
     colore_w = 42 * mm
     qty_w = (usable_width - colore_w) / (len(size_cols) + 1)
     col_widths = [colore_w] + [qty_w] * (len(size_cols) + 1)
@@ -566,7 +598,18 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -
     for (sku, prod), group in grouped:
         block = []
         tot_sku = int(group["Totale"].sum())
-        block.append(Paragraph(f"<b>{sku}</b> — {prod} <font color='#86868b'>(Tot lordo: {tot_sku} pz)</font>", sku_style))
+        
+        # Titolo SKU a sx, Totale a dx
+        p_left = Paragraph(f"<b>{sku}</b> — {prod}", sku_style)
+        p_right = Paragraph(f"Totale {tot_sku} pz", right_tot_style)
+        title_t = Table([[p_left, p_right]], colWidths=[usable_width - 40*mm, 40*mm])
+        title_t.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ]))
+        block.append(title_t)
 
         header = ["Colore"] + size_cols + ["Totale"]
         data = [header]
@@ -1700,9 +1743,10 @@ def main() -> None:
                 sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
                 substitute_modal(sku_color_options, proj_dir)
 
-        with c_pdf:
+      with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
-            pdf_bytes = make_order_summary_pdf(piv_full, subs, file_stock)
+            # Passiamo sel_school e sel_proj per creare l'intestazione!
+            pdf_bytes = make_order_summary_pdf(piv_full, subs, file_stock, sel_school, sel_proj)
             st.download_button("📄 PDF Ordine", data=pdf_bytes, file_name=f"ordine_{sel_school}_{sel_proj}.pdf", mime="application/pdf", use_container_width=True)
 
         piv_view = piv_full
