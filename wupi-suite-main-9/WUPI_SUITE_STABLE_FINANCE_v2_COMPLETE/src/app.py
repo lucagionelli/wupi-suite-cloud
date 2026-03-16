@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
@@ -1499,7 +1500,7 @@ def substitute_modal(sku_color_options, proj_dir: Path):
         
     c_nav1, c_nav2 = st.columns([4, 1])
     with c_nav1:
-        sel_val = st.selectbox("Seleziona rapidamente (oppure usa le frecce):", options=sku_color_options, index=st.session_state.sub_idx)
+        sel_val = st.selectbox("Seleziona rapidamente:", options=sku_color_options, index=st.session_state.sub_idx)
         if sel_val != sku_color_options[st.session_state.sub_idx]:
             st.session_state.sub_idx = sku_color_options.index(sel_val)
             st.rerun()
@@ -1517,8 +1518,13 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     sub_data = subs.get(k, {})
     if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
         
-    curr_forn = sub_data.get("fornitore", "ActionWear")
-    curr_sku = sub_data.get("sku", "")
+    # LOGICA DI MEMORIA INTELLEGENTE
+    # Se ha un sostituto salvato usa quello, ALTRIMENTI usa l'ultimo inserito!
+    last_forn = st.session_state.get("last_sub_forn", "ActionWear")
+    last_sku = st.session_state.get("last_sub_sku", "")
+    
+    curr_forn = sub_data.get("fornitore", last_forn) if sub_data else last_forn
+    curr_sku = sub_data.get("sku", last_sku) if sub_data else last_sku
 
     custom_sups = load_custom_suppliers()
     base_sups = ["ActionWear", "Basic", "Roly", "Top-Tex", "Stanley/Stella", "Innova"]
@@ -1531,7 +1537,8 @@ def substitute_modal(sku_color_options, proj_dir: Path):
         with f1:
             sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
             altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "") if sel_forn == "Altro" else ""
-        with f2: new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
+        with f2: 
+            new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
             
         st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
         b1, b2, b3 = st.columns(3)
@@ -1542,16 +1549,29 @@ def substitute_modal(sku_color_options, proj_dir: Path):
         if btn_prev or btn_save or btn_next:
             final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
             final_sku = new_sku.strip()
+            
+            # Salviamo in sessione per ricordarceli al prossimo click!
+            st.session_state["last_sub_forn"] = final_forn
+            st.session_state["last_sub_sku"] = final_sku
+            
             if final_forn and final_forn not in base_sups and final_forn not in custom_sups and final_forn != "Altro":
                 custom_sups.append(final_forn)
                 save_custom_suppliers(custom_sups)
+                
             if final_sku: subs[k] = {"fornitore": final_forn, "sku": final_sku}
             else: subs.pop(k, None)
+            
             save_subs(proj_dir, subs)
+            
             if btn_prev: st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
             if btn_next: st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
             st.rerun()
-
+@st.cache_data
+def get_cached_dataframe(file_path_str: str, file_mtime: float) -> pd.DataFrame:
+    """Carica e normalizza l'Excel solo se il file è stato modificato, velocizzando l'app del 1000%"""
+    df_raw = pd.read_excel(file_path_str)
+    return df_normalize(df_raw)
+    
 def main() -> None:
     st.set_page_config(page_title="WUPI Suite", layout="wide", page_icon=str(FAVICON_PATH) if FAVICON_PATH.exists() else "🧰")
     
@@ -1560,10 +1580,20 @@ def main() -> None:
     # ---------------------
     # WORKSPACE SIDEBAR
     # ---------------------
-    st.sidebar.title("🗂 Workspace")
+    st.sidebar.title("WUPI Workspace")
     schools = [d.name for d in PROJECTS_DIR.iterdir() if d.is_dir()]
     sel_school = st.sidebar.selectbox("1️⃣ Seleziona Scuola", options=["-- Seleziona --"] + sorted(schools))
     
+    if sel_school and sel_school != "-- Seleziona --":
+        with st.sidebar.expander("⚙️ Gestisci Scuola"):
+            new_school_name = st.text_input("Rinomina", value=sel_school, key="ren_sch")
+            if st.button("Salva Nuovo Nome") and new_school_name != sel_school:
+                os.rename(PROJECTS_DIR / sel_school, PROJECTS_DIR / safe_dir_name(new_school_name))
+                st.rerun()
+            if st.button("❌ Elimina Scuola in modo permanente"):
+                shutil.rmtree(PROJECTS_DIR / sel_school)
+                st.rerun()
+                
     with st.sidebar.expander("➕ Nuova Scuola"):
         new_school = st.text_input("Nome Scuola", placeholder="Es. Liceo Respighi")
         if st.button("Crea Scuola", use_container_width=True) and new_school:
@@ -1575,6 +1605,16 @@ def main() -> None:
         school_dir = PROJECTS_DIR / sel_school
         projs = [d.name for d in school_dir.iterdir() if d.is_dir()]
         sel_proj = st.sidebar.selectbox("2️⃣ Seleziona Tornata / Progetto", options=["-- Seleziona --"] + sorted(projs))
+        
+        if sel_proj and sel_proj != "-- Seleziona --":
+            with st.sidebar.expander("⚙️ Gestisci Tornata"):
+                new_proj_name = st.text_input("Rinomina", value=sel_proj, key="ren_prj")
+                if st.button("Salva Nuovo Nome Tornata") and new_proj_name != sel_proj:
+                    os.rename(school_dir / sel_proj, school_dir / safe_dir_name(new_proj_name))
+                    st.rerun()
+                if st.button("❌ Elimina Tornata in modo permanente"):
+                    shutil.rmtree(school_dir / sel_proj)
+                    st.rerun()
         
         with st.sidebar.expander("➕ Nuova Tornata"):
             new_project = st.text_input("Nome Tornata", placeholder="Es. Febbraio 2026")
@@ -1613,8 +1653,9 @@ def main() -> None:
             excel_path.unlink()
             st.rerun()
 
-    df_raw = pd.read_excel(excel_path)
-    df = df_normalize(df_raw)
+   # Caricamento fulmineo con Cache
+    mtime = os.path.getmtime(excel_path)
+    df = get_cached_dataframe(str(excel_path), mtime)
 
     current_proj_id = str(proj_dir)
     if "confirmed" not in st.session_state or st.session_state.get("confirmed_proj") != current_proj_id:
