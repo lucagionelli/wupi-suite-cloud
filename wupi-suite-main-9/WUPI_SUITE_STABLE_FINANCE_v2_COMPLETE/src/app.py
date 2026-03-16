@@ -411,6 +411,9 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
         st.info("Nessun dato per questo SKU/prodotto.")
         return
 
+    # IL FIX: Qualsiasi taglia vuota/anomala diventa "UNICA" per far combaciare le chiavi col magazzino
+    sub["Taglia"] = sub["Taglia"].replace({"": "UNICA", None: "UNICA", "nan": "UNICA", "NaN": "UNICA"})
+
     file_stock = load_stock(proj_dir)
     total_sku = int(sub["Pezzi"].sum())
     st.subheader(f"{sku} - {total_sku} pz")
@@ -433,11 +436,11 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
         chips = ""
         color_stock_tot = 0
         for t, q in items:
+            # Ora la chiave sarà sempre perfetta (es. UNICA invece di vuoto)
             stock_k = f"{clean_str(sku)}||{clean_str(color)}||{clean_str(t)}"
             sq = file_stock.get(stock_k, 0)
             color_stock_tot += sq
             if sq > 0:
-                # Mostra quanti ne rimangono da ordinare e tra parentesi quelli presi da magazzino
                 chips += f'<span class="chip">{t} <span class="q">{max(0, q-sq)} <span style="font-size:11px; color:#86868b; font-weight:500;">(+{sq}📦)</span></span></span>'
             else:
                 chips += f'<span class="chip">{t} <span class="q">{q}</span></span>'
@@ -472,7 +475,6 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
                     st.session_state["confirmed"] = set(confirmed)
                     st.rerun()
             with b3:
-                # Il Popover blindato per il Magazzino
                 with st.popover("📦", use_container_width=True):
                     st.markdown(f"**Magazzino {color if color else ''}**")
                     with st.form(f"wh_form_{hashlib.md5(k.encode()).hexdigest()}"):
@@ -490,6 +492,23 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
                                 else: stk.pop(sk, None)
                             save_stock(proj_dir, stk)
                             st.rerun()
+
+    _, r1, r2 = st.columns([6, 2, 2])
+    with r1:
+        if st.button("✓ Conferma tutto lo SKU", key=f"all_{sku}_{prod}", use_container_width=True):
+            for color, _, _ in blocks:
+                confirmed.add(normalize_key(key_row(sku, prod, color)))
+            save_state(proj_dir, sorted(list(confirmed)))
+            st.session_state['confirmed'] = set(confirmed)
+            st.session_state['advance_next_sku'] = True
+            st.rerun()
+    with r2:
+        if st.button("↩︎ Annulla tutto lo SKU", key=f"unall_{sku}_{prod}", use_container_width=True):
+            for color, _, _ in blocks:
+                confirmed.discard(normalize_key(key_row(sku, prod, color)))
+            save_state(proj_dir, sorted(list(confirmed)))
+            st.session_state["confirmed"] = set(confirmed)
+            st.rerun()
 
     _, r1, r2 = st.columns([6, 2, 2])
     with r1:
