@@ -1354,93 +1354,75 @@ def make_bibbia_pdf_grid(variants: pd.DataFrame, mock_map: dict, cfg: BibbiaCfg,
 
 @st.dialog("Gestione SKU Sostitutivi")
 def substitute_modal(sku_color_options, proj_dir: Path):
+    
+    # Trucco nativo per chiudere la modale in modo pulito
+    if st.session_state.get("close_sub_modal"):
+        st.session_state.close_sub_modal = False
+        st.rerun()
+
     if "sub_idx" not in st.session_state: st.session_state.sub_idx = 0
     if st.session_state.sub_idx >= len(sku_color_options): st.session_state.sub_idx = 0
+
+    current_sel = sku_color_options[st.session_state.sub_idx]
+    sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
+    k = f"{clean_str(sku)}||{clean_str(color)}"
+
+    # ==========================================
+    # IL CERVELLO DELLA MODALE (Callback Nativa)
+    # ==========================================
+    def nav_callback(action):
+        idx = st.session_state.sub_idx
         
+        # Recupera i valori in tempo reale
+        forn = st.session_state.get(f"sel_forn_{idx}")
+        altro = st.session_state.get(f"altro_{idx}", "")
+        s_val = st.session_state.get(f"sku_{idx}", "")
+        
+        final_forn = altro.strip() if forn == "Altro" else (forn or "ActionWear")
+        final_sku = s_val.strip()
+        
+        # Salva in memoria per l'auto-compilazione successiva
+        st.session_state["last_sub_forn"] = final_forn
+        st.session_state["last_sub_sku"] = final_sku
+        
+        # Salva nuovi fornitori "Altro"
+        cust = load_custom_suppliers()
+        if final_forn and final_forn not in ["ActionWear", "Basic", "Roly", "Top-Tex", "Stanley/Stella", "Innova", "Altro"] and final_forn not in cust:
+            cust.append(final_forn)
+            save_custom_suppliers(cust)
+            
+        # Salva lo SKU nel database del progetto
+        sbs = load_subs(proj_dir)
+        if final_sku: sbs[k] = {"fornitore": final_forn, "sku": final_sku}
+        else: sbs.pop(k, None)
+        save_subs(proj_dir, sbs)
+        
+        # Esegui l'azione richiesta
+        if action == "prev": st.session_state.sub_idx = max(0, idx - 1)
+        elif action == "next": st.session_state.sub_idx = min(len(sku_color_options)-1, idx + 1)
+        elif action == "close": st.session_state.close_sub_modal = True
+
+    # ==========================================
+    # INTERFACCIA
+    # ==========================================
     c_nav1, c_nav2 = st.columns([4, 1])
     with c_nav1:
-        sel_val = st.selectbox("Seleziona rapidamente (oppure usa le frecce):", options=sku_color_options, index=st.session_state.sub_idx)
-        if sel_val != sku_color_options[st.session_state.sub_idx]:
+        sel_val = st.selectbox("Seleziona rapidamente:", options=sku_color_options, index=st.session_state.sub_idx)
+        if sel_val != current_sel:
             st.session_state.sub_idx = sku_color_options.index(sel_val)
             st.rerun()
     with c_nav2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("❌ Chiudi", use_container_width=True):
-            st.rerun() # Il rerun esplicito chiude la modale
+            st.rerun()
 
-    current_sel = sku_color_options[st.session_state.sub_idx]
-    sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
-    k = f"{clean_str(sku)}||{clean_str(color)}"
-    
-    subs = load_subs(proj_dir)
-    sub_data = subs.get(k, {})
-    if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
-        
-    # Memoria per pre-compilare l'ultimo fornitore/SKU usato
-    last_forn = st.session_state.get("last_sub_forn", "ActionWear")
-    last_sku = st.session_state.get("last_sub_sku", "")
-    
-    curr_forn = sub_data.get("fornitore", last_forn) if sub_data else last_forn
-    curr_sku = sub_data.get("sku", last_sku) if sub_data else last_sku
-
-    custom_sups = load_custom_suppliers()
-    base_sups = ["ActionWear", "Basic", "Roly", "Top-Tex", "Stanley/Stella", "Innova"]
-    all_sups = base_sups + custom_sups + ["Altro"]
-    idx_forn = all_sups.index(curr_forn) if curr_forn in all_sups else all_sups.index("Altro")
-    
     st.markdown(f"Stai modificando: **{sku}** — Variante **{color}**")
-    
-    # 1. PARTE DINAMICA (Fuori dal form) -> Si aggiorna all'istante
-    sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
-    if sel_forn == "Altro":
-        altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "")
-    else:
-        altro_forn = ""
-        
-    # 2. PARTE STATICA (Dentro il form) -> Cattura il tasto Invio
-    with st.form(f"sub_form_{st.session_state.sub_idx}", clear_on_submit=False):
-        new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
-            
-        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        b1, b2, b3 = st.columns(3)
-        
-        # IL TRUCCO DEL TASTO INVIO: Streamlit assegna l'Invio al PRIMO bottone dichiarato nel codice!
-        btn_save = b2.form_submit_button("💾 Salva e Chiudi", type="primary", use_container_width=True)
-        btn_prev = b1.form_submit_button("⬅️ Salva e Precedente", use_container_width=True)
-        btn_next = b3.form_submit_button("Salva e Successivo ➡️", use_container_width=True)
-        
-        if btn_prev or btn_save or btn_next:
-            final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
-            final_sku = new_sku.strip()
-            
-            st.session_state["last_sub_forn"] = final_forn
-            st.session_state["last_sub_sku"] = final_sku
-            
-            if final_forn and final_forn not in base_sups and final_forn not in custom_sups and final_forn != "Altro":
-                custom_sups.append(final_forn)
-                save_custom_suppliers(custom_sups)
-            
-            if final_sku: subs[k] = {"fornitore": final_forn, "sku": final_sku}
-            else: subs.pop(k, None)
-            
-            save_subs(proj_dir, subs)
-            
-            if btn_prev: 
-                st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
-            elif btn_next: 
-                st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
-            elif btn_save:
-                st.rerun() # Spegne la modale solo se premi "Salva e Chiudi" o Invio!
 
-    current_sel = sku_color_options[st.session_state.sub_idx]
-    sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
-    k = f"{clean_str(sku)}||{clean_str(color)}"
-    
+    # Caricamento valori o auto-compilazione
     subs = load_subs(proj_dir)
     sub_data = subs.get(k, {})
     if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
-        
-    # Memoria intelligente per ricordarsi sempre l'ultimo inserito nei passaggi "Avanti" o "Indietro"
+    
     last_forn = st.session_state.get("last_sub_forn", "ActionWear")
     last_sku = st.session_state.get("last_sub_sku", "")
     
@@ -1451,24 +1433,24 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     base_sups = ["ActionWear", "Basic", "Roly", "Top-Tex", "Stanley/Stella", "Innova"]
     all_sups = base_sups + custom_sups + ["Altro"]
     idx_forn = all_sups.index(curr_forn) if curr_forn in all_sups else all_sups.index("Altro")
+
+    # Campi Dinamici Reattivi
+    f1, f2 = st.columns(2)
+    with f1:
+        sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn, key=f"sel_forn_{st.session_state.sub_idx}")
+        if sel_forn == "Altro":
+            st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "", key=f"altro_{st.session_state.sub_idx}")
+    with f2:
+        # Se premi Invio cattura "close" in automatico!
+        st.text_input("SKU Sostitutivo (Premi Invio per chiudere)", value=curr_sku, placeholder="Es. DOG123", key=f"sku_{st.session_state.sub_idx}", on_change=nav_callback, args=("close",))
+
+    st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+    b1, b2, b3 = st.columns(3)
     
-    with st.form(f"sub_form_{st.session_state.sub_idx}", clear_on_submit=False):
-        st.markdown(f"Stai modificando: **{sku}** — Variante **{color}**")
-        f1, f2 = st.columns(2)
-        with f1:
-            sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
-            altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "") if sel_forn == "Altro" else ""
-        with f2: 
-            new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
-            
-        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        b1, b2, b3 = st.columns(3)
-        
-        # IL TRUCCO DEL TASTO INVIO: Streamlit assegna il tasto Invio al PRIMO bottone dichiarato nel codice!
-        # Noi lo mettiamo visivamente in b2 (al centro), ma lo scriviamo per primo nel codice!
-        with b2: btn_save = st.form_submit_button("💾 Salva e Chiudi", type="primary", use_container_width=True)
-        with b1: btn_prev = st.form_submit_button("⬅️ Salva e Precedente", use_container_width=True)
-        with b3: btn_next = st.form_submit_button("Salva e Successivo ➡️", use_container_width=True)
+    # Bottoni con callback (eseguono l'azione e ricaricano la UI istantaneamente)
+    b1.button("⬅️ Salva e Prec.", use_container_width=True, on_click=nav_callback, args=("prev",))
+    b2.button("💾 Salva e Chiudi", type="primary", use_container_width=True, on_click=nav_callback, args=("close",))
+    b3.button("Salva e Succ. ➡️", use_container_width=True, on_click=nav_callback, args=("next",))
         
         if btn_prev or btn_save or btn_next:
             final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
