@@ -356,7 +356,7 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
             val = r[c]
             if pd.isna(val): val = ""
             
-            # Aggiunta sostituto dinamico SOLO per quel colore (FORNITORE_SKU in nero)
+            # Aggiunta sostituto dinamico SOLO per quel file e quel colore
             if c == "SKU":
                 sub_key = f"{sku_raw}||{col_raw}"
                 sub_data = subs.get(sub_key, {})
@@ -1137,11 +1137,12 @@ def find_mockup_bytes(mock_map: dict, sku_key: str, model_key: str, col_key: str
     k = (sku_key, "", col_key, side)
     if k in mock_map: return mock_map[k]
 
-    k = (sku_key, model_key, col_key, "")
-    if k in mock_map: return mock_map[k]
+    if side == "fronte":
+        k = (sku_key, model_key, col_key, "")
+        if k in mock_map: return mock_map[k]
 
-    k = (sku_key, "", col_key, "")
-    if k in mock_map: return mock_map[k]
+        k = (sku_key, "", col_key, "")
+        if k in mock_map: return mock_map[k]
 
     return None
 
@@ -1729,7 +1730,7 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
     </style>
     """, unsafe_allow_html=True)
     
-    h1, h2, h3, h4, h5, h6 = st.columns([1.5, 2.5, 3, 2.5, 1, 1])
+    h1, h2, h3, h4, h5, h6 = st.columns([1.5, 2.5, 3, 2.5, 1, 1], vertical_alignment="bottom")
     with h1: st.markdown("<div class='bibbia-header'>SKU / Colore</div>", unsafe_allow_html=True)
     with h2: st.markdown("<div class='bibbia-header'>Prodotto</div>", unsafe_allow_html=True)
     with h3: st.markdown("<div class='bibbia-header'>Taglie</div>", unsafe_allow_html=True)
@@ -1738,7 +1739,7 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
     with h6: st.markdown("<div class='bibbia-header'>Retro</div>", unsafe_allow_html=True)
 
     for idx, r in variants.iterrows():
-        c1, c2, c3, c4, c5, c6 = st.columns([1.5, 2.5, 3, 2.5, 1, 1])
+        c1, c2, c3, c4, c5, c6 = st.columns([1.5, 2.5, 3, 2.5, 1, 1], vertical_alignment="center")
         
         with c1:
             st.markdown(f"**{r['SKU']}**<br><span style='color:#555; font-size:14px;'>{r['Colore']}</span>", unsafe_allow_html=True)
@@ -1754,13 +1755,13 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
             st.markdown(f"<div style='font-size:12px; color:#666; line-height:1.3;'>{inc_html}</div>", unsafe_allow_html=True)
         with c5:
             if r["Fronte"] == "✅":
-                st.markdown("<div style='margin-top:6px;'>✅</div>", unsafe_allow_html=True)
+                st.markdown("✅")
             else:
                 if st.button("❌", key=f"f_{idx}_{r['SKU_KEY']}_{r['COL_KEY']}_{r.get('MODEL_KEY','')}", help="Aggiungi Fronte"):
                     upload_missing_modal(r, "fronte")
         with c6:
             if r["Retro"] == "✅":
-                st.markdown("<div style='margin-top:6px;'>✅</div>", unsafe_allow_html=True)
+                st.markdown("✅")
             else:
                 if st.button("❌", key=f"r_{idx}_{r['SKU_KEY']}_{r['COL_KEY']}_{r.get('MODEL_KEY','')}", help="Aggiungi Retro"):
                     upload_missing_modal(r, "retro")
@@ -1806,7 +1807,7 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
 
 
 @st.dialog("Gestione SKU Sostitutivi")
-def substitute_modal(sku_color_options):
+def substitute_modal(sku_color_options, file_sig):
     if "sub_idx" not in st.session_state: 
         st.session_state.sub_idx = 0
     
@@ -1829,7 +1830,10 @@ def substitute_modal(sku_color_options):
     sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
     k = f"{clean_str(sku)}||{clean_str(color)}"
     
-    subs = load_subs()
+    all_subs = load_subs()
+    # Carichiamo solo i salvataggi legati a QUESTO specifico file
+    subs = all_subs.get(file_sig, {})
+    
     sub_data = subs.get(k, {})
     if isinstance(sub_data, str):
         sub_data = {"fornitore": "Altro", "sku": sub_data}
@@ -1876,7 +1880,8 @@ def substitute_modal(sku_color_options):
             else:
                 subs.pop(k, None)
                 
-            save_subs(subs)
+            all_subs[file_sig] = subs
+            save_subs(all_subs)
             
             if btn_prev: st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
             if btn_next: st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
@@ -1896,7 +1901,7 @@ def main() -> None:
     top_l, top_r = st.columns([7, 1])
     with top_l:
         st.title("WUPI Suite")
-        st.caption(f"Build: STUDIO_v7_WIZARD (stable)")
+        st.caption(f"Build: STUDIO_v9_SMART_SUBS (stable)")
     with top_r:
         if LOGO_PATH.exists():
             st.image(str(LOGO_PATH), use_container_width=True)
@@ -1918,7 +1923,8 @@ def main() -> None:
         st.session_state["confirmed_sig"] = sig
     confirmed = st.session_state["confirmed"]
 
-    subs = load_subs()
+    all_subs = load_subs()
+    subs = all_subs.get(sig, {})
 
     tabs = st.tabs(["📦 Report acquisto", "🏷 Etichette", "💸 Ordini da pagare", "📖 Bibbia maker", "💰 Finanze"])
     with tabs[0]:
@@ -1941,7 +1947,7 @@ def main() -> None:
         if st.session_state.show_sub_modal:
             pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
             sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
-            substitute_modal(sku_color_options)
+            substitute_modal(sku_color_options, sig)
 
         with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
