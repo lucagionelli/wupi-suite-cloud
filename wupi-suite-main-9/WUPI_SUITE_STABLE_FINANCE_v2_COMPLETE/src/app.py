@@ -1498,17 +1498,10 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     if "sub_idx" not in st.session_state: st.session_state.sub_idx = 0
     if st.session_state.sub_idx >= len(sku_color_options): st.session_state.sub_idx = 0
         
-    c_nav1, c_nav2 = st.columns([4, 1])
-    with c_nav1:
-        sel_val = st.selectbox("Seleziona rapidamente:", options=sku_color_options, index=st.session_state.sub_idx)
-        if sel_val != sku_color_options[st.session_state.sub_idx]:
-            st.session_state.sub_idx = sku_color_options.index(sel_val)
-            st.rerun()
-    with c_nav2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("❌ Chiudi", use_container_width=True):
-            st.session_state.show_sub_modal = False
-            st.rerun()
+    sel_val = st.selectbox("Seleziona rapidamente (oppure usa le frecce):", options=sku_color_options, index=st.session_state.sub_idx)
+    if sel_val != sku_color_options[st.session_state.sub_idx]:
+        st.session_state.sub_idx = sku_color_options.index(sel_val)
+        st.rerun()
 
     current_sel = sku_color_options[st.session_state.sub_idx]
     sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
@@ -1518,8 +1511,7 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     sub_data = subs.get(k, {})
     if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
         
-    # LOGICA DI MEMORIA INTELLEGENTE
-    # Se ha un sostituto salvato usa quello, ALTRIMENTI usa l'ultimo inserito!
+    # Memoria intelligente
     last_forn = st.session_state.get("last_sub_forn", "ActionWear")
     last_sku = st.session_state.get("last_sub_sku", "")
     
@@ -1550,14 +1542,14 @@ def substitute_modal(sku_color_options, proj_dir: Path):
             final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
             final_sku = new_sku.strip()
             
-            # Salviamo in sessione per ricordarceli al prossimo click!
+            # Salvataggio in cache per la compilazione automatica al prossimo articolo
             st.session_state["last_sub_forn"] = final_forn
             st.session_state["last_sub_sku"] = final_sku
             
             if final_forn and final_forn not in base_sups and final_forn not in custom_sups and final_forn != "Altro":
                 custom_sups.append(final_forn)
                 save_custom_suppliers(custom_sups)
-                
+            
             if final_sku: subs[k] = {"fornitore": final_forn, "sku": final_sku}
             else: subs.pop(k, None)
             
@@ -1565,7 +1557,9 @@ def substitute_modal(sku_color_options, proj_dir: Path):
             
             if btn_prev: st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
             if btn_next: st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
+            
             st.rerun()
+            
 @st.cache_data
 def get_cached_dataframe(file_path_str: str, file_mtime: float) -> pd.DataFrame:
     """Carica e normalizza l'Excel solo se il file è stato modificato, velocizzando l'app del 1000%"""
@@ -1676,16 +1670,13 @@ def main() -> None:
         c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
         with c_search: q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
             
-        if "show_sub_modal" not in st.session_state: st.session_state.show_sub_modal = False
-            
-        with c_sub:
+      with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🔄 SKU Sostitutivo", use_container_width=True): st.session_state.show_sub_modal = True
-
-        if st.session_state.show_sub_modal:
-            pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
-            sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
-            substitute_modal(sku_color_options, proj_dir)
+            # Apre la modale in modo nativo e pulito senza forzature
+            if st.button("🔄 SKU Sostitutivo", use_container_width=True):
+                pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
+                sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
+                substitute_modal(sku_color_options, proj_dir)
 
         with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
