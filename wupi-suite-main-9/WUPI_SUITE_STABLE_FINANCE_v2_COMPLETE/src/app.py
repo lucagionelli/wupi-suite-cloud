@@ -1729,7 +1729,8 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
     with h5: st.markdown("<div class='bibbia-header'>Fronte</div>", unsafe_allow_html=True)
     with h6: st.markdown("<div class='bibbia-header'>Retro</div>", unsafe_allow_html=True)
 
-    for _, r in variants.iterrows():
+    # QUI ABBIAMO AGGIUNTO 'idx' PER EVITARE I DOPPIONI
+    for idx, r in variants.iterrows():
         c1, c2, c3, c4, c5, c6 = st.columns([1.5, 2.5, 3, 2.5, 1, 1])
         
         with c1:
@@ -1748,13 +1749,13 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
             if r["Fronte"] == "✅":
                 st.markdown("<div style='margin-top:6px;'>✅</div>", unsafe_allow_html=True)
             else:
-                if st.button("❌", key=f"f_{r['SKU_KEY']}_{r['COL_KEY']}_{r.get('MODEL_KEY','')}", help="Aggiungi Fronte"):
+                if st.button("❌", key=f"f_{idx}_{r['SKU_KEY']}_{r['COL_KEY']}_{r.get('MODEL_KEY','')}", help="Aggiungi Fronte"):
                     upload_missing_modal(r, "fronte")
         with c6:
             if r["Retro"] == "✅":
                 st.markdown("<div style='margin-top:6px;'>✅</div>", unsafe_allow_html=True)
             else:
-                if st.button("❌", key=f"r_{r['SKU_KEY']}_{r['COL_KEY']}_{r.get('MODEL_KEY','')}", help="Aggiungi Retro"):
+                if st.button("❌", key=f"r_{idx}_{r['SKU_KEY']}_{r['COL_KEY']}_{r.get('MODEL_KEY','')}", help="Aggiungi Retro"):
                     upload_missing_modal(r, "retro")
         
         st.markdown("<hr style='margin:0.25em 0; border:none; border-bottom:1px solid #f0f0f2;'>", unsafe_allow_html=True)
