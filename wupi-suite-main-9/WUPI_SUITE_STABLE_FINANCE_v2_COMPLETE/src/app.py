@@ -410,19 +410,23 @@ def cards_css() -> None:
 
 @st.dialog("Gestione Magazzino 📦")
 def warehouse_modal(sku: str, color: str, items: list, proj_dir: Path):
-    st.markdown(f"Indica quanti pezzi hai già in studio e vuoi **prelevare dal magazzino** per lo SKU **{sku}** (Variante: **{color}**)")
+    col_str = clean_str(color)
+    st.markdown(f"Indica quanti pezzi hai già in studio e vuoi **prelevare dal magazzino** per lo SKU **{sku}** (Variante: **{col_str if col_str else 'Nessun colore'}**)")
     
     file_stock = load_stock(proj_dir)
     
-    with st.form(f"wh_form_{sku}_{color}"):
+    # Usiamo chiavi crittografate per evitare che stringhe vuote facciano crashare il form
+    form_key = f"wh_form_{hashlib.md5(f'{sku}_{col_str}'.encode()).hexdigest()}"
+    with st.form(form_key):
         new_stock = {}
         cols = st.columns(3)
         for i, (taglia, q_ord) in enumerate(items):
             col = cols[i % 3]
-            k = f"{clean_str(sku)}||{clean_str(color)}||{taglia}"
+            k = f"{clean_str(sku)}||{col_str}||{taglia}"
             curr_stock = file_stock.get(k, 0)
             with col:
-                val = st.number_input(f"Taglia {taglia} (Richiesti {q_ord})", min_value=0, max_value=q_ord, value=min(curr_stock, q_ord), step=1, key=f"in_{k}")
+                input_key = f"in_{hashlib.md5(k.encode()).hexdigest()}"
+                val = st.number_input(f"Taglia {taglia} (Richiesti {q_ord})", min_value=0, max_value=q_ord, value=min(curr_stock, q_ord), step=1, key=input_key)
                 new_stock[k] = val
                 
         st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
@@ -587,10 +591,10 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
     elements.append(header_t)
     elements.append(Spacer(1, 10*mm)) # I due a capo richiesti
 
-    # Larghezze dinamiche basate sulle taglie reali
+    # LARGHEZZE DINAMICHE: Tutte le taglie reali trovate nell'Excel!
     size_cols = [c for c in piv_df.columns if c not in ["SKU", "Nome Prodotto", "Colore", "Totale"]]
     colore_w = 42 * mm
-    qty_w = (usable_width - colore_w) / (len(size_cols) + 1)
+    qty_w = (usable_width - colore_w) / max(1, (len(size_cols) + 1))
     col_widths = [colore_w] + [qty_w] * (len(size_cols) + 1)
 
     grouped = piv_df.groupby(["SKU", "Nome Prodotto"], sort=False)
