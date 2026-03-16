@@ -187,12 +187,25 @@ def file_sig(file_bytes: bytes) -> str:
     return hashlib.sha256(file_bytes).hexdigest()[:12]
 
 def clean_str(x) -> str:
-    if pd.isna(x):
+    # 1. Se è già una stringa, la puliamo subito (il 99% dei casi)
+    if isinstance(x, str):
+        s = x.strip()
+        return "" if s.lower() in ("nan", "none", "null") else s
+    
+    # 2. Se è fisicamente vuota
+    if x is None:
         return ""
+        
+    # 3. Controllo di sicurezza Pandas (Ignora le liste/array strani)
+    try:
+        if pd.isna(x):
+            return ""
+    except ValueError:
+        pass
+        
+    # 4. Caso estremo: la convertiamo a forza in stringa
     s = str(x).strip()
-    if s.lower() in ("nan", "none", "null"):
-        return ""
-    return s
+    return "" if s.lower() in ("nan", "none", "null") else s
 
 def normalize_size(s: str) -> str:
     s2 = clean_str(s).upper()
