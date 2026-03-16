@@ -282,7 +282,6 @@ def render_pivot_html(piv: pd.DataFrame, confirmed: set[str], subs: dict, file_s
     view = piv.copy()
     
     cols = list(view.columns)
-    # Troviamo dinamicamente tutte le taglie reali! (Tutto ciò che non è testo o Totale)
     size_cols = [c for c in cols if c not in ["SKU", "Nome Prodotto", "Colore", "Totale"]]
 
     for c in size_cols:
@@ -298,10 +297,8 @@ table.wupi td {{ background-color: #ffffff; }}
 table.wupi td.tot, table.wupi th.tot {{ position:sticky; right:0; z-index:3; font-weight:700; }}
 table.wupi th.tot {{ background-color: #fafafc; border-left: 1px solid #f0f0f2; }}
 table.wupi td.tot {{ background-color: #fafafc; border-left: 1px solid #f0f0f2; }}
-/* Colori VERDI per le righe confermate */
 tr.confirmed td {{ background-color: #e6f7e6; }}
 tr.confirmed td.tot {{ background-color: #ccebcc; }}
-/* Colori AZZURRI per le righe magazzino */
 tr.warehouse td {{ background-color: #e6f0fa; }}
 tr.warehouse td.tot {{ background-color: #cce0f5; }}
 .center {{ text-align:center; }}
@@ -330,16 +327,14 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
             val = r[sc]
             if pd.notna(val) and val != "":
                 val_int = int(val)
-                stock_k = f"{sku_raw}||{col_raw}||{sc}"
+                stock_k = f"{sku_raw}||{col_raw}||{clean_str(sc)}"
                 stock_qty = file_stock.get(stock_k, 0)
                 row_stock_tot += stock_qty
                 row_order_tot += max(0, val_int - stock_qty)
 
         tr_cls = ""
-        if row_stock_tot > 0:
-            tr_cls = "warehouse"
-        elif k in confirmed:
-            tr_cls = "confirmed"
+        if row_stock_tot > 0: tr_cls = "warehouse"
+        elif k in confirmed: tr_cls = "confirmed"
 
         html.append(f'<tr class="{tr_cls}">')
 
@@ -348,34 +343,25 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
             align = "center" if c in size_cols + ["Totale"] else ""
             val = r[c]
             
-            if c == "Totale":
-                val = row_order_tot if row_order_tot > 0 else ""
-                
+            if c == "Totale": val = row_order_tot if row_order_tot > 0 else ""
             elif c in size_cols:
                 if pd.notna(val) and val != "":
                     val_int = int(val)
-                    if val_int == 0:
-                        val = ""
+                    if val_int == 0: val = ""
                     else:
-                        stock_k = f"{sku_raw}||{col_raw}||{c}"
+                        stock_k = f"{sku_raw}||{col_raw}||{clean_str(c)}"
                         stock_qty = file_stock.get(stock_k, 0)
                         if stock_qty > 0:
                             order_qty = max(0, val_int - stock_qty)
-                            if order_qty > 0:
-                                val = f"{order_qty} <span style='font-size:10.5px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
-                            else:
-                                val = f"<span style='font-size:11px; color:#1976d2; font-weight:700;'>{stock_qty} mag</span>"
-                        else:
-                            val = str(val_int)
-                else:
-                    val = ""
+                            if order_qty > 0: val = f"{order_qty} <span style='font-size:10.5px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
+                            else: val = f"<span style='font-size:11px; color:#1976d2; font-weight:700;'>{stock_qty} mag</span>"
+                        else: val = str(val_int)
+                else: val = ""
                         
             elif c == "SKU":
                 sub_key = f"{sku_raw}||{col_raw}"
                 sub_data = subs.get(sub_key, {})
-                if isinstance(sub_data, str):
-                    sub_data = {"fornitore": "Altro", "sku": sub_data}
-                    
+                if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
                 if isinstance(sub_data, dict) and sub_data.get("sku"):
                     f_name = sub_data.get("fornitore", "").upper()
                     s_name = sub_data.get("sku", "").upper()
@@ -412,35 +398,6 @@ def cards_css() -> None:
 </style>
 """, unsafe_allow_html=True)
 
-@st.dialog("Gestione Magazzino 📦")
-def warehouse_modal(sku: str, color: str, items: list, proj_dir: Path):
-    col_str = clean_str(color)
-    st.markdown(f"Indica quanti pezzi hai già in studio e vuoi **prelevare dal magazzino** per lo SKU **{sku}** (Variante: **{col_str if col_str else 'Nessun colore'}**)")
-    
-    file_stock = load_stock(proj_dir)
-    
-    # Usiamo chiavi crittografate per evitare che stringhe vuote facciano crashare il form
-    form_key = f"wh_form_{hashlib.md5(f'{sku}_{col_str}'.encode()).hexdigest()}"
-    with st.form(form_key):
-        new_stock = {}
-        cols = st.columns(3)
-        for i, (taglia, q_ord) in enumerate(items):
-            col = cols[i % 3]
-            k = f"{clean_str(sku)}||{col_str}||{taglia}"
-            curr_stock = file_stock.get(k, 0)
-            with col:
-                input_key = f"in_{hashlib.md5(k.encode()).hexdigest()}"
-                val = st.number_input(f"Taglia {taglia} (Richiesti {q_ord})", min_value=0, max_value=q_ord, value=min(curr_stock, q_ord), step=1, key=input_key)
-                new_stock[k] = val
-                
-        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        if st.form_submit_button("💾 Salva in Magazzino", type="primary", use_container_width=True):
-            for k, v in new_stock.items():
-                if v > 0: file_stock[k] = v
-                else: file_stock.pop(k, None)
-            save_stock(proj_dir, file_stock)
-            st.rerun()
-
 def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str], proj_dir: Path) -> None:
     cards_css()
     sub = df[(df["SKU"] == sku) & (df["Nome Prodotto"] == prod)].copy()
@@ -470,7 +427,8 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
         chips = ""
         color_stock_tot = 0
         for t, q in items:
-            stock_k = f"{clean_str(sku)}||{clean_str(color)}||{t}"
+            # Blindiamo la chiave magazzino
+            stock_k = f"{clean_str(sku)}||{clean_str(color)}||{clean_str(t)}"
             sq = file_stock.get(stock_k, 0)
             color_stock_tot += sq
             if sq > 0:
@@ -508,8 +466,24 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
                     st.session_state["confirmed"] = set(confirmed)
                     st.rerun()
             with b3:
-                if st.button("📦", key=f"wh_btn_{hashlib.md5(k.encode()).hexdigest()}", help="Preleva da Magazzino", use_container_width=True):
-                    warehouse_modal(sku, color, items, proj_dir)
+                # IL PIANO B: Menu a tendina nativo al posto della modale!
+                with st.popover("📦", use_container_width=True):
+                    st.markdown(f"**Magazzino {color if color else ''}**")
+                    with st.form(f"wh_form_{hashlib.md5(k.encode()).hexdigest()}"):
+                        new_stock = {}
+                        for t, q in items:
+                            stock_k = f"{clean_str(sku)}||{clean_str(color)}||{clean_str(t)}"
+                            curr_stock = file_stock.get(stock_k, 0)
+                            val = st.number_input(f"{t} (Max {q})", min_value=0, max_value=q, value=min(curr_stock, q), step=1)
+                            new_stock[stock_k] = val
+                        
+                        if st.form_submit_button("💾 Salva", type="primary", use_container_width=True):
+                            stk = load_stock(proj_dir)
+                            for sk, v in new_stock.items():
+                                if v > 0: stk[sk] = v
+                                else: stk.pop(sk, None)
+                            save_stock(proj_dir, stk)
+                            st.rerun()
 
     _, r1, r2 = st.columns([6, 2, 2])
     with r1:
@@ -527,7 +501,6 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
             save_state(proj_dir, sorted(list(confirmed)))
             st.session_state["confirmed"] = set(confirmed)
             st.rerun()
-
 def global_css() -> None:
     st.markdown("""
 <style>
@@ -558,15 +531,12 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
     elements = []
     styles = getSampleStyleSheet()
 
-    # Nuovi stili
     school_style = ParagraphStyle('SchoolStyle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor("#1d1d1f"), spaceAfter=0)
     proj_style = ParagraphStyle('ProjStyle', parent=styles['Heading3'], fontSize=14, textColor=colors.HexColor("#86868b"), spaceBefore=0)
-    
     sku_style = ParagraphStyle('SkuStyle', parent=styles['Heading2'], fontSize=13, spaceBefore=0, spaceAfter=0, textColor=colors.HexColor("#1d1d1f"))
     right_tot_style = ParagraphStyle('RightTotStyle', parent=styles['Normal'], alignment=2, textColor=colors.HexColor("#86868b"), fontSize=11)
     centered_style = ParagraphStyle('CenteredStyle', parent=styles['Normal'], alignment=1, leading=10)
 
-    # HEADER: Scuola e Tornata a sinistra, Logo a destra
     left_p = [Paragraph(f"<b>{school}</b>", school_style), Paragraph(proj, proj_style)]
     
     logo_img = ""
@@ -576,8 +546,7 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
             w, h = im.size
             aspect = w / h
             target_h = 14 * mm
-            target_w = target_h * aspect
-            logo_img = RLImage(str(LOGO_PATH), width=target_w, height=target_h)
+            logo_img = RLImage(str(LOGO_PATH), width=target_h * aspect, height=target_h)
             logo_img.hAlign = 'RIGHT'
         except:
             logo_img = ""
@@ -593,9 +562,8 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
     ]))
     
     elements.append(header_t)
-    elements.append(Spacer(1, 10*mm)) # I due a capo richiesti
+    elements.append(Spacer(1, 10*mm))
 
-    # LARGHEZZE DINAMICHE: Tutte le taglie reali trovate nell'Excel!
     size_cols = [c for c in piv_df.columns if c not in ["SKU", "Nome Prodotto", "Colore", "Totale"]]
     colore_w = 42 * mm
     qty_w = (usable_width - colore_w) / max(1, (len(size_cols) + 1))
@@ -607,7 +575,6 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
         block = []
         tot_sku = int(group["Totale"].sum())
         
-        # Titolo SKU a sx, Totale a dx
         p_left = Paragraph(f"<b>{sku}</b> — {prod}", sku_style)
         p_right = Paragraph(f"Totale {tot_sku} pz", right_tot_style)
         title_t = Table([[p_left, p_right]], colWidths=[usable_width - 40*mm, 40*mm])
@@ -642,19 +609,16 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
                 val = r[sc]
                 if pd.notna(val) and val != "":
                     val_int = int(val)
-                    if val_int == 0:
-                        row.append("")
+                    if val_int == 0: row.append("")
                     else:
-                        stock_k = f"{clean_str(sku)}||{clean_str(col)}||{sc}"
+                        stock_k = f"{clean_str(sku)}||{clean_str(col)}||{clean_str(sc)}"
                         stock_qty = file_stock.get(stock_k, 0)
                         order_qty = max(0, val_int - stock_qty)
                         row_order_tot += order_qty
                         
                         if stock_qty > 0:
-                            if order_qty > 0:
-                                cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font> <font size='7' color='#86868b'>({stock_qty} mag)</font>", centered_style)
-                            else:
-                                cell_p = Paragraph(f"<font size='8' color='#1976d2'><b>{stock_qty} mag</b></font>", centered_style)
+                            if order_qty > 0: cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font> <font size='7' color='#86868b'>({stock_qty} mag)</font>", centered_style)
+                            else: cell_p = Paragraph(f"<font size='8' color='#1976d2'><b>{stock_qty} mag</b></font>", centered_style)
                             row.append(cell_p)
                         else: row.append(str(order_qty) if order_qty > 0 else "")
                 else: row.append("")
@@ -678,7 +642,6 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('FONTNAME', (-1, 0), (-1, -1), 'Helvetica-Bold'),
         ]))
-        
         block.append(t)
         block.append(Spacer(1, 6*mm))
         elements.append(KeepTogether(block))
