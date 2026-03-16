@@ -1352,24 +1352,85 @@ def make_bibbia_pdf_grid(variants: pd.DataFrame, mock_map: dict, cfg: BibbiaCfg,
     buf.seek(0)
     return buf.getvalue()
 
-@st.dialog("Associa immagine mancante")
-def upload_missing_modal(r, side):
-    st.markdown(f"Stai caricando il **{side.upper()}** per:")
-    st.markdown(f"**{r['SKU']}** — {r['Nome Prodotto']} ({r['Colore']})")
-    uid = hashlib.md5(f"{r['SKU']}_{r['Nome Prodotto']}_{r['Colore']}_{side}".encode()).hexdigest()[:10]
-    fup = st.file_uploader(f"Carica file (.jpg, .png)", type=["png","jpg","jpeg"], key=f"modal_up_{uid}")
-    if fup:
-        if st.button("Salva abbinamento", type="primary", use_container_width=True):
-            save_path = APP_SUPPORT / "manual_mockups" / f"{r['SKU_KEY']}__{r.get('MODEL_KEY','')}__{r['COL_KEY']}__{side}{Path(fup.name).suffix or '.jpg'}"
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-            save_path.write_bytes(fup.getvalue())
+@st.dialog("Gestione SKU Sostitutivi")
+def substitute_modal(sku_color_options, proj_dir: Path):
+    if "sub_idx" not in st.session_state: st.session_state.sub_idx = 0
+    if st.session_state.sub_idx >= len(sku_color_options): st.session_state.sub_idx = 0
+        
+    c_nav1, c_nav2 = st.columns([4, 1])
+    with c_nav1:
+        sel_val = st.selectbox("Seleziona rapidamente (oppure usa le frecce):", options=sku_color_options, index=st.session_state.sub_idx)
+        if sel_val != sku_color_options[st.session_state.sub_idx]:
+            st.session_state.sub_idx = sku_color_options.index(sel_val)
+            st.rerun()
+    with c_nav2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("❌ Chiudi", use_container_width=True):
+            st.session_state.show_sub_modal = False
+            st.rerun()
+
+    current_sel = sku_color_options[st.session_state.sub_idx]
+    sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
+    k = f"{clean_str(sku)}||{clean_str(color)}"
+    
+    subs = load_subs(proj_dir)
+    sub_data = subs.get(k, {})
+    if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
+        
+    # Memoria intelligente per ricordarsi sempre l'ultimo inserito nei passaggi "Avanti" o "Indietro"
+    last_forn = st.session_state.get("last_sub_forn", "ActionWear")
+    last_sku = st.session_state.get("last_sub_sku", "")
+    
+    curr_forn = sub_data.get("fornitore", last_forn) if sub_data else last_forn
+    curr_sku = sub_data.get("sku", last_sku) if sub_data else last_sku
+
+    custom_sups = load_custom_suppliers()
+    base_sups = ["ActionWear", "Basic", "Roly", "Top-Tex", "Stanley/Stella", "Innova"]
+    all_sups = base_sups + custom_sups + ["Altro"]
+    idx_forn = all_sups.index(curr_forn) if curr_forn in all_sups else all_sups.index("Altro")
+    
+    with st.form(f"sub_form_{st.session_state.sub_idx}", clear_on_submit=False):
+        st.markdown(f"Stai modificando: **{sku}** — Variante **{color}**")
+        f1, f2 = st.columns(2)
+        with f1:
+            sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
+            altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "") if sel_forn == "Altro" else ""
+        with f2: 
+            new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
             
-            raw_manual = load_manual_mockups()
-            keybase = [str(r["SKU_KEY"]), str(r.get("MODEL_KEY","")), str(r["COL_KEY"])]
+        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+        b1, b2, b3 = st.columns(3)
+        
+        # IL TRUCCO DEL TASTO INVIO: Streamlit assegna il tasto Invio al PRIMO bottone dichiarato nel codice!
+        # Noi lo mettiamo visivamente in b2 (al centro), ma lo scriviamo per primo nel codice!
+        with b2: btn_save = st.form_submit_button("💾 Salva e Chiudi", type="primary", use_container_width=True)
+        with b1: btn_prev = st.form_submit_button("⬅️ Salva e Precedente", use_container_width=True)
+        with b3: btn_next = st.form_submit_button("Salva e Successivo ➡️", use_container_width=True)
+        
+        if btn_prev or btn_save or btn_next:
+            final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
+            final_sku = new_sku.strip()
             
-            raw_json = _read_json(BIBBIA_MANUAL_PATH, {})
-            raw_json["|||".join(keybase + [side])] = str(save_path)
-            save_manual_mockups(raw_json)
+            st.session_state["last_sub_forn"] = final_forn
+            st.session_state["last_sub_sku"] = final_sku
+            
+            if final_forn and final_forn not in base_sups and final_forn not in custom_sups and final_forn != "Altro":
+                custom_sups.append(final_forn)
+                save_custom_suppliers(custom_sups)
+            
+            if final_sku: subs[k] = {"fornitore": final_forn, "sku": final_sku}
+            else: subs.pop(k, None)
+            
+            save_subs(proj_dir, subs)
+            
+            # Se premi Avanti o Indietro, naviga. Se premi Salva e Chiudi, spegne la modale!
+            if btn_prev: 
+                st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
+            elif btn_next: 
+                st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
+            elif btn_save:
+                st.session_state.show_sub_modal = False
+            
             st.rerun()
 
 def page_bibbia(df_norm: pd.DataFrame) -> None:
@@ -1715,23 +1776,29 @@ def main() -> None:
         st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano VERDI.")
         piv_full = pivot_report(df)
 
-        c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
-        with c_search: q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
+      c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
+        
+        if "show_sub_modal" not in st.session_state: 
+            st.session_state.show_sub_modal = False
+            
+        with c_search:
+            q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
             
         with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
-            # Apre la modale in modo nativo e pulito senza forzature
+            # Questo attiva la variabile di memoria, così la modale non si chiude ai ricaricamenti!
             if st.button("🔄 SKU Sostitutivo", use_container_width=True):
-                pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
-                sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
-                substitute_modal(sku_color_options, proj_dir)
+                st.session_state.show_sub_modal = True
+
+        if st.session_state.show_sub_modal:
+            pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
+            sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
+            substitute_modal(sku_color_options, proj_dir)
 
         with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
-            # Passiamo sel_school e sel_proj per creare l'intestazione!
             pdf_bytes = make_order_summary_pdf(piv_full, subs, file_stock, sel_school, sel_proj)
             st.download_button("📄 PDF Ordine", data=pdf_bytes, file_name=f"ordine_{sel_school}_{sel_proj}.pdf", mime="application/pdf", use_container_width=True)
-
         piv_view = piv_full
         if q:
             qq = str(q).strip()
