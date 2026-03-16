@@ -12,10 +12,13 @@ import os
 import re
 
 from PIL import Image
-from reportlab.lib.pagesizes import A3, landscape
+from reportlab.lib.pagesizes import A3, A4, landscape
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 # -------------------------
 # Config
@@ -333,18 +336,21 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
 
     for _, r in view.iterrows():
         sku_raw = clean_str(r.get("SKU", ""))
-        k = normalize_key(key_row(sku_raw, clean_str(r.get("Nome Prodotto", "")), clean_str(r.get("Colore", ""))))
+        col_raw = clean_str(r.get("Colore", ""))
+        k = normalize_key(key_row(sku_raw, clean_str(r.get("Nome Prodotto", "")), col_raw))
         tr_cls = "confirmed" if k in confirmed else ""
         html.append(f'<tr class="{tr_cls}">')
+        
         for c in cols:
             cls = "tot" if c == "Totale" else ""
             align = "center" if c in SIZE_ORDER + ["Totale"] else ""
             val = r[c]
             if pd.isna(val): val = ""
             
-            # Aggiunta sostituto dinamico
+            # Aggiunta sostituto dinamico SOLO per quel colore
             if c == "SKU":
-                sub_val = subs.get(sku_raw, "")
+                sub_key = f"{sku_raw}||{col_raw}"
+                sub_val = subs.get(sub_key, "")
                 if sub_val:
                     val = f'{val}<br><span style="font-size:11px; font-weight:800; color:#000000; letter-spacing:0.5px;">{sub_val.upper()}</span>'
                     
@@ -482,6 +488,7 @@ def global_css() -> None:
 [data-testid="stHeaderActionElements"] {
     display: none !important;
 }
+
 /* Sfondo principale pulito e solido */
 .stApp {
     background-color: #ffffff;
@@ -546,6 +553,70 @@ a, a:visited { color:#1d1d1f; }
 .wupi-gap-after-pivot { height: 14px; }
 </style>
 """, unsafe_allow_html=True)
+
+# -------------------------
+# PDF Ordine Fornitore
+# -------------------------
+def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm, leftMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, spaceAfter=12, textColor=colors.HexColor("#1d1d1f"))
+    sku_style = ParagraphStyle('SkuStyle', parent=styles['Heading2'], fontSize=13, spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#1d1d1f"))
+
+    elements.append(Paragraph("Distinta Ordine Fornitore", title_style))
+
+    size_cols = [s for s in SIZE_ORDER if s in piv_df.columns]
+    grouped = piv_df.groupby(["SKU", "Nome Prodotto"], sort=False)
+
+    for (sku, prod), group in grouped:
+        tot_sku = int(group["Totale"].sum())
+        elements.append(Paragraph(f"<b>{sku}</b> — {prod} <font color='#86868b'>(Tot: {tot_sku} pz)</font>", sku_style))
+
+        header = ["Colore"] + size_cols + ["Totale"]
+        data = [header]
+
+        for _, r in group.iterrows():
+            col = str(r["Colore"])
+            sub_key = f"{clean_str(sku)}||{clean_str(col)}"
+            sub_val = subs.get(sub_key, "")
+
+            if sub_val:
+                col_p = Paragraph(f"{col}<br/><font color='#e53935' size='7'><b>SUB: {sub_val}</b></font>", styles['Normal'])
+                row = [col_p]
+            else:
+                row = [col]
+
+            for sc in size_cols:
+                val = r[sc]
+                row.append(str(val) if val > 0 else "")
+            row.append(str(int(r["Totale"])))
+            data.append(row)
+
+        t = Table(data, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#fafafc")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#1d1d1f")),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e5ea")),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('FONTNAME', (-1, 0), (-1, -1), 'Helvetica-Bold'),
+        ]))
+        elements.append(t)
+        elements.append(Spacer(1, 6*mm))
+
+    doc.build(elements)
+    buf.seek(0)
+    return buf.getvalue()
 
 # -------------------------
 # Labels
@@ -1716,17 +1787,19 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
         st.download_button("⬇️ Scarica PDF Griglia (8 in 1)", data=pdf, file_name="wupi_bibbia_griglia.pdf", mime="application/pdf", use_container_width=True)
 
 @st.dialog("Aggiungi SKU Sostitutivo")
-def substitute_modal(sku_options):
-    st.markdown("Seleziona lo SKU originale a cui vuoi assegnare un rimpiazzo.")
-    sel_sku = st.selectbox("SKU Originale", options=sku_options)
+def substitute_modal(sku_color_options):
+    st.markdown("Seleziona la combinazione SKU + Colore originale a cui vuoi assegnare un rimpiazzo.")
+    sel = st.selectbox("SKU e Colore Originale", options=sku_color_options)
     sub_val = st.text_input("Inserisci SKU/Nome sostitutivo", placeholder="Es. JOKER-NEW")
     
     if st.button("Salva Sostituto", type="primary", use_container_width=True):
         subs = load_subs()
+        sku, color = [x.strip() for x in sel.split(" — ", 1)]
+        k = f"{clean_str(sku)}||{clean_str(color)}"
         if sub_val.strip():
-            subs[clean_str(sel_sku)] = clean_str(sub_val).upper()
+            subs[k] = clean_str(sub_val).upper()
         else:
-            subs.pop(clean_str(sel_sku), None)
+            subs.pop(k, None)
         save_subs(subs)
         st.rerun()
 
@@ -1743,7 +1816,7 @@ def main() -> None:
     top_l, top_r = st.columns([7, 1])
     with top_l:
         st.title("WUPI Suite")
-        st.caption(f"Build: STUDIO_v5_GREEN_UX (stable)")
+        st.caption(f"Build: STUDIO_v6_PDF_DISTINTA (stable)")
     with top_r:
         if LOGO_PATH.exists():
             st.image(str(LOGO_PATH), use_container_width=True)
@@ -1773,14 +1846,19 @@ def main() -> None:
         st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano VERDI.")
         piv_full = pivot_report(df)
 
-        c_search, c_sub = st.columns([5, 1])
+        c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
         with c_search:
             q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
         with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🔄 SKU Sostitutivo", use_container_width=True):
-                sku_list = sorted(piv_full["SKU"].unique())
-                substitute_modal(sku_list)
+                pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
+                sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
+                substitute_modal(sku_color_options)
+        with c_pdf:
+            st.markdown("<br>", unsafe_allow_html=True)
+            pdf_bytes = make_order_summary_pdf(piv_full, subs)
+            st.download_button("📄 PDF Ordine", data=pdf_bytes, file_name="wupi_ordine_fornitore.pdf", mime="application/pdf", use_container_width=True)
 
         piv_view = piv_full
         if q:
