@@ -1839,7 +1839,7 @@ def main() -> None:
         st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano VERDI.")
         piv_full = pivot_report(df)
 
-       c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
+        c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
             
         with c_search:
             q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
