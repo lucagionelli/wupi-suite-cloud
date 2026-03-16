@@ -607,8 +607,7 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -
                             # Azzurro se preso totalmente da magazzino
                             cell_p = Paragraph(f"<font size='8' color='#1976d2'><b>{stock_qty} mag</b></font>", centered_style)
                         row.append(cell_p)
-                        else: row.append(str(order_qty) if order_qty > 0 else "")
-                else: row.append("")
+                     
                     
             row.append(str(row_order_tot) if row_order_tot > 0 else "")
             data.append(row)
