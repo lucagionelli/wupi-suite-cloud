@@ -291,8 +291,12 @@ table.wupi td {{ background-color: #ffffff; }}
 table.wupi td.tot, table.wupi th.tot {{ position:sticky; right:0; z-index:3; font-weight:700; }}
 table.wupi th.tot {{ background-color: #fafafc; border-left: 1px solid #f0f0f2; }}
 table.wupi td.tot {{ background-color: #fafafc; border-left: 1px solid #f0f0f2; }}
+/* Colori VERDI per le righe confermate */
 tr.confirmed td {{ background-color: #e6f7e6; }}
 tr.confirmed td.tot {{ background-color: #ccebcc; }}
+/* Colori AZZURRI per le righe magazzino */
+tr.warehouse td {{ background-color: #e6f0fa; }}
+tr.warehouse td.tot {{ background-color: #cce0f5; }}
 .center {{ text-align:center; }}
 </style>"""
 
@@ -312,10 +316,9 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
         sku_raw = clean_str(r.get("SKU", ""))
         col_raw = clean_str(r.get("Colore", ""))
         k = normalize_key(key_row(sku_raw, clean_str(r.get("Nome Prodotto", "")), col_raw))
-        tr_cls = "confirmed" if k in confirmed else ""
-        html.append(f'<tr class="{tr_cls}">')
         
         row_order_tot = 0
+        row_stock_tot = 0
         for sc in SIZE_ORDER:
             if sc in cols:
                 val = r[sc]
@@ -323,7 +326,17 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
                     val_int = int(val)
                     stock_k = f"{sku_raw}||{col_raw}||{sc}"
                     stock_qty = file_stock.get(stock_k, 0)
+                    row_stock_tot += stock_qty
                     row_order_tot += max(0, val_int - stock_qty)
+
+        # Nuova Logica Colore: Azzurro se c'è stock, altrimenti Verde se confermato
+        tr_cls = ""
+        if row_stock_tot > 0:
+            tr_cls = "warehouse"
+        elif k in confirmed:
+            tr_cls = "confirmed"
+
+        html.append(f'<tr class="{tr_cls}">')
 
         for c in cols:
             cls = "tot" if c == "Totale" else ""
@@ -344,9 +357,10 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
                         if stock_qty > 0:
                             order_qty = max(0, val_int - stock_qty)
                             if order_qty > 0:
-                                val = f"{order_qty}<br><span style='font-size:10px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
+                                # Affiancato con uno spazio, niente <br>
+                                val = f"{order_qty} <span style='font-size:10.5px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
                             else:
-                                val = f"<span style='font-size:11px; color:#4caf50; font-weight:700;'>{stock_qty} mag.</span>"
+                                val = f"<span style='font-size:11px; color:#1976d2; font-weight:700;'>{stock_qty} mag</span>"
                         else:
                             val = str(val_int)
                 else:
@@ -381,6 +395,7 @@ def cards_css() -> None:
 .wupi-card { background-color: #ffffff; border: 1px solid #e5e5ea; border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02); transition: transform 0.1s ease, box-shadow 0.1s ease; }
 .wupi-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06); }
 .wupi-card.confirmed { background-color: #e6f7e6; border: 1px solid #ccebcc; }
+.wupi-card.warehouse { background-color: #e6f0fa; border: 1px solid #cce0f5; } /* AZZURRO MAGAZZINO */
 
 .card-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
 .color-name { font-weight:700; font-size:17px; letter-spacing:-0.3px; color: #1d1d1f; }
@@ -389,7 +404,7 @@ def cards_css() -> None:
 
 .chip { display:inline-flex; gap:6px; align-items:center; padding: 4px 10px; border-radius: 8px; background-color: #f0f0f2; font-size: 13px; font-weight: 500; color: #555; }
 .chip .q { font-weight:700; font-size:14px; color: #1d1d1f; }
-.wupi-card.confirmed .chip { background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.wupi-card.confirmed .chip, .wupi-card.warehouse .chip { background-color: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -445,17 +460,24 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
         is_done = k in confirmed
         
         chips = ""
+        color_stock_tot = 0
         for t, q in items:
             stock_k = f"{clean_str(sku)}||{clean_str(color)}||{t}"
             sq = file_stock.get(stock_k, 0)
+            color_stock_tot += sq
             if sq > 0:
                 chips += f'<span class="chip">{t} <span class="q">{q-sq} <span style="font-size:11px; color:#86868b; font-weight:500;">(+{sq}📦)</span></span></span>'
             else:
                 chips += f'<span class="chip">{t} <span class="q">{q}</span></span>'
 
+        # Logica colori per la Card
+        is_fully_stocked = (color_stock_tot >= tot and tot > 0)
+        card_cls = "warehouse" if is_fully_stocked else ("confirmed" if is_done else "")
+        btn_disabled = is_done or is_fully_stocked
+
         with col:
             st.markdown(f"""
-<div class="wupi-card {'confirmed' if is_done else ''}">
+<div class="wupi-card {card_cls}">
   <div class="card-head">
     <div class="color-name">{color if color else '(colore vuoto)'}</div>
     <div class="color-tot">{tot} pz</div>
@@ -466,7 +488,7 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
             st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
             b1, b2, b3 = st.columns([4, 4, 2])
             with b1:
-                if st.button("✓ Conferma", key=f"conf__{hashlib.md5(k.encode()).hexdigest()}", disabled=is_done, use_container_width=True):
+                if st.button("✓ Conferma", key=f"conf__{hashlib.md5(k.encode()).hexdigest()}", disabled=btn_disabled, use_container_width=True):
                     confirmed.add(normalize_key(k))
                     save_state(proj_dir, sorted(list(confirmed)))
                     st.session_state["confirmed"] = set(confirmed)
@@ -577,12 +599,14 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -
                         order_qty = max(0, val_int - stock_qty)
                         row_order_tot += order_qty
                         
-                        if stock_qty > 0:
-                            if order_qty > 0:
-                                cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font><br/><font size='7' color='#86868b'>{stock_qty} mag.</font>", centered_style)
-                            else:
-                                cell_p = Paragraph(f"<font size='7' color='#4caf50'><b>{stock_qty} mag.</b></font>", centered_style)
-                            row.append(cell_p)
+                      if stock_qty > 0:
+                        if order_qty > 0:
+                            # Testo affiancato sulla stessa riga
+                            cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font> <font size='7' color='#86868b'>({stock_qty} mag)</font>", centered_style)
+                        else:
+                            # Azzurro se preso totalmente da magazzino
+                            cell_p = Paragraph(f"<font size='8' color='#1976d2'><b>{stock_qty} mag</b></font>", centered_style)
+                        row.append(cell_p)
                         else: row.append(str(order_qty) if order_qty > 0 else "")
                 else: row.append("")
                     
