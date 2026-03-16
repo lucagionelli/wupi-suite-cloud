@@ -1670,7 +1670,7 @@ def main() -> None:
         c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
         with c_search: q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
             
-      with c_sub:
+        with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
             # Apre la modale in modo nativo e pulito senza forzature
             if st.button("🔄 SKU Sostitutivo", use_container_width=True):
