@@ -236,6 +236,7 @@ def standardize_required_columns(df: pd.DataFrame) -> pd.DataFrame:
         "Nome incisione": ["nome incisione", "incisione", "testo incisione", "engraving", "nome personalizzazione"],
         "Prezzo unitario": ["prezzo unitario", "prezzo", "prezzo vendita", "unit price", "price", "prezzo cad", "prezzo iva inclusa"],
         "Prezzo acquisto": ["prezzo acquisto", "costo", "costo unitario", "purchase price", "cost"],
+        "Importo ordine": ["importo ordine", "importo totale", "totale ordine", "importo"],
     }
     cols = list(df.columns)
     norm_map = { _norm_colname(c): c for c in cols }
