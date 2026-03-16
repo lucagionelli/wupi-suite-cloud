@@ -16,7 +16,7 @@ from reportlab.lib.pagesizes import A3, A4, landscape
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -584,8 +584,11 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
     grouped = piv_df.groupby(["SKU", "Nome Prodotto"], sort=False)
 
     for (sku, prod), group in grouped:
+        # Array che contiene tutti gli elementi dello SKU che NON devono essere spezzati
+        block = []
+        
         tot_sku = int(group["Totale"].sum())
-        elements.append(Paragraph(f"<b>{sku}</b> — {prod} <font color='#86868b'>(Tot: {tot_sku} pz)</font>", sku_style))
+        block.append(Paragraph(f"<b>{sku}</b> — {prod} <font color='#86868b'>(Tot: {tot_sku} pz)</font>", sku_style))
 
         header = ["Colore"] + size_cols + ["Totale"]
         data = [header]
@@ -613,7 +616,8 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
             row.append(str(int(r["Totale"])))
             data.append(row)
 
-        t = Table(data, repeatRows=1)
+        # hAlign='LEFT' assicura che l'intera tabella sia a filo del margine sinistro
+        t = Table(data, repeatRows=1, hAlign='LEFT')
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#fafafc")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#1d1d1f")),
@@ -629,8 +633,12 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('FONTNAME', (-1, 0), (-1, -1), 'Helvetica-Bold'),
         ]))
-        elements.append(t)
-        elements.append(Spacer(1, 6*mm))
+        
+        block.append(t)
+        block.append(Spacer(1, 6*mm))
+        
+        # KeepTogether racchiude il blocco: se non c'è spazio, sposta tutto alla pagina seguente
+        elements.append(KeepTogether(block))
 
     doc.build(elements)
     buf.seek(0)
@@ -1831,7 +1839,6 @@ def substitute_modal(sku_color_options, file_sig):
     k = f"{clean_str(sku)}||{clean_str(color)}"
     
     all_subs = load_subs()
-    # Carichiamo solo i salvataggi legati a QUESTO specifico file
     subs = all_subs.get(file_sig, {})
     
     sub_data = subs.get(k, {})
@@ -1901,7 +1908,7 @@ def main() -> None:
     top_l, top_r = st.columns([7, 1])
     with top_l:
         st.title("WUPI Suite")
-        st.caption(f"Build: STUDIO_v9_SMART_SUBS (stable)")
+        st.caption(f"Build: STUDIO_v10_PDF_ALIGN_KEEPTOGETHER (stable)")
     with top_r:
         if LOGO_PATH.exists():
             st.image(str(LOGO_PATH), use_container_width=True)
