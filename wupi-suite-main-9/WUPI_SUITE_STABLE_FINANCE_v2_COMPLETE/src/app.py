@@ -330,16 +330,26 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
             val = r[c]
             
             if c == "Totale":
-                val = row_order_tot
+                val = row_order_tot if row_order_tot > 0 else ""
                 
             elif c in SIZE_ORDER:
                 if pd.notna(val) and val != "":
                     val_int = int(val)
-                    stock_k = f"{sku_raw}||{col_raw}||{c}"
-                    stock_qty = file_stock.get(stock_k, 0)
-                    if stock_qty > 0:
-                        order_qty = max(0, val_int - stock_qty)
-                        val = f"{order_qty}<br><span style='font-size:10px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
+                    if val_int == 0:
+                        val = ""
+                    else:
+                        stock_k = f"{sku_raw}||{col_raw}||{c}"
+                        stock_qty = file_stock.get(stock_k, 0)
+                        if stock_qty > 0:
+                            order_qty = max(0, val_int - stock_qty)
+                            if order_qty > 0:
+                                val = f"{order_qty}<br><span style='font-size:10px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
+                            else:
+                                val = f"<span style='font-size:11px; color:#4caf50; font-weight:700;'>{stock_qty} mag.</span>"
+                        else:
+                            val = str(val_int)
+                else:
+                    val = ""
                         
             elif c == "SKU":
                 sub_key = f"{sku_raw}||{col_raw}"
@@ -510,6 +520,8 @@ a, a:visited { color:#1d1d1f; }
 # -------------------------
 def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -> bytes:
     buf = io.BytesIO()
+    
+    usable_width = A4[0] - 24 * mm
     doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm, leftMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
     elements = []
     styles = getSampleStyleSheet()
@@ -521,6 +533,11 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -
     elements.append(Paragraph("Distinta Ordine Fornitore", title_style))
 
     size_cols = [s for s in SIZE_ORDER if s in piv_df.columns]
+    
+    colore_w = 42 * mm
+    qty_w = (usable_width - colore_w) / (len(size_cols) + 1)
+    col_widths = [colore_w] + [qty_w] * (len(size_cols) + 1)
+
     grouped = piv_df.groupby(["SKU", "Nome Prodotto"], sort=False)
 
     for (sku, prod), group in grouped:
@@ -551,24 +568,27 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -
                 val = r[sc]
                 if pd.notna(val) and val != "":
                     val_int = int(val)
-                    stock_k = f"{clean_str(sku)}||{clean_str(col)}||{sc}"
-                    stock_qty = file_stock.get(stock_k, 0)
-                    order_qty = max(0, val_int - stock_qty)
-                    row_order_tot += order_qty
-                    
-                    if stock_qty > 0:
-                        if order_qty > 0:
-                            cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font><br/><font size='7' color='#86868b'>{stock_qty} mag.</font>", centered_style)
-                        else:
-                            cell_p = Paragraph(f"<font size='7' color='#4caf50'><b>{stock_qty} mag.</b></font>", centered_style)
-                        row.append(cell_p)
-                    else: row.append(str(val_int))
+                    if val_int == 0:
+                        row.append("")
+                    else:
+                        stock_k = f"{clean_str(sku)}||{clean_str(col)}||{sc}"
+                        stock_qty = file_stock.get(stock_k, 0)
+                        order_qty = max(0, val_int - stock_qty)
+                        row_order_tot += order_qty
+                        
+                        if stock_qty > 0:
+                            if order_qty > 0:
+                                cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font><br/><font size='7' color='#86868b'>{stock_qty} mag.</font>", centered_style)
+                            else:
+                                cell_p = Paragraph(f"<font size='7' color='#4caf50'><b>{stock_qty} mag.</b></font>", centered_style)
+                            row.append(cell_p)
+                        else: row.append(str(order_qty) if order_qty > 0 else "")
                 else: row.append("")
                     
-            row.append(str(row_order_tot))
+            row.append(str(row_order_tot) if row_order_tot > 0 else "")
             data.append(row)
 
-        t = Table(data, repeatRows=1, hAlign='LEFT')
+        t = Table(data, repeatRows=1, colWidths=col_widths, hAlign='LEFT')
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#fafafc")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#1d1d1f")),
@@ -1565,7 +1585,7 @@ def main() -> None:
     top_l, top_r = st.columns([7, 1])
     with top_l:
         st.title("WUPI Suite")
-        st.caption(f"Build: STUDIO_v12_MINI_ERP (stable)")
+        st.caption(f"Build: STUDIO_v13_CLEAN_PDF (stable)")
     with top_r:
         if LOGO_PATH.exists(): st.image(str(LOGO_PATH), use_container_width=True)
 
