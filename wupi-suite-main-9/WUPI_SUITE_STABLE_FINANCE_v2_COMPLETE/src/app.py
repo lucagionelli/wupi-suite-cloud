@@ -850,15 +850,26 @@ def to_number_it(v) -> float:
         return 0.0
 
 def build_pending_model(df: pd.DataFrame) -> dict:
-    required = ["N. Ordine","Classe","Cognome Studente","Nome Studente","Docente/ATA","Pagamento","Importo ordine"]
-    ensure_cols(df, [c for c in required if c in df.columns] + ["N. Ordine"])
-
     d = df.copy()
+
+    # 1. Trova dinamicamente la colonna degli importi
+    importo_col = "Importo ordine" # fallback di sicurezza
+    for col in d.columns:
+        c_norm = str(col).lower().replace("_", " ").strip()
+        if any(x in c_norm for x in ["importo", "totale", "prezzo", "da pagare"]):
+            importo_col = col
+            break
+
+    required = ["N. Ordine","Classe","Cognome Studente","Nome Studente","Docente/ATA","Pagamento", importo_col]
+    
+    # Crea colonne vuote se mancano
     for c in required:
         if c not in d.columns: d[c] = ""
         d[c] = d[c].map(clean_str)
 
-    pending = d[d["Pagamento"].map(normalize_pagamento).eq("pending")].copy()
+    # 2. Rileva tutte le possibili diciture di "non pagato"
+    pending_keywords = ["pending", "in attesa", "non pagato", "da pagare", "on-hold", "on hold"]
+    pending = d[d["Pagamento"].map(normalize_pagamento).isin(pending_keywords)].copy()
 
     seen = {}
     for _, r in pending.iterrows():
@@ -881,7 +892,7 @@ def build_pending_model(df: pd.DataFrame) -> dict:
             "orderId": order_id,
             "classe": classe if classe else "(Senza classe)",
             "displayName": display_name,
-            "importo": to_number_it(r["Importo ordine"]),
+            "importo": to_number_it(r[importo_col]),
         }
 
     unique_orders = list(seen.values())
@@ -908,7 +919,6 @@ def build_pending_model(df: pd.DataFrame) -> dict:
         "grand_total": round(grand_total, 2),
         "n_orders": len(unique_orders),
     }
-
 def pending_pdf_per_class_students(model: dict) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -1034,17 +1044,15 @@ def pending_pdf_totals_only(model: dict) -> bytes:
     buf.seek(0)
     return buf.getvalue()
 
-def page_pending(df_raw: pd.DataFrame) -> None:
+def page_pending(df_target: pd.DataFrame) -> None:
     st.subheader("💸 Ordini da pagare")
-    st.caption("Estrae gli ordini con Pagamento = pending, consolida per N. Ordine e raggruppa per classe (Docenti/ATA se Classe vuota).")
+    st.caption("Estrae gli ordini non saldati, consolida per N. Ordine e raggruppa per classe.")
 
-    required = ["N. Ordine","Classe","Cognome Studente","Nome Studente","Docente/ATA","Pagamento","Importo ordine"]
-    missing = [c for c in required if c not in df_raw.columns]
-    if missing:
-        st.error("Nel file mancano queste colonne per 'Ordini da pagare': " + ", ".join(missing))
+    if "Pagamento" not in df_target.columns and "N. Ordine" not in df_target.columns:
+        st.error("Mancano le colonne chiave 'N. Ordine' e 'Pagamento' nel file.")
         return
 
-    model = build_pending_model(df_raw)
+    model = build_pending_model(df_target)
 
     top1, top2, top3 = st.columns([2,2,3])
     with top1:
@@ -1052,13 +1060,17 @@ def page_pending(df_raw: pd.DataFrame) -> None:
     with top2:
         st.metric("Totale €", f'{model["grand_total"]:.2f}')
     with top3:
-        pdfA = pending_pdf_per_class_students(model)
-        pdfB = pending_pdf_totals_only(model)
-        st.download_button("⬇️ PDF per classe (dettaglio studenti)", data=pdfA, file_name="wupi_ordini_pending_dettaglio_per_classe.pdf", mime="application/pdf")
-        st.download_button("⬇️ PDF riepilogo totali (un foglio)", data=pdfB, file_name="wupi_ordini_pending_riepilogo_totali.pdf", mime="application/pdf")
+        if model["n_orders"] > 0:
+            pdfA = pending_pdf_per_class_students(model)
+            pdfB = pending_pdf_totals_only(model)
+            st.download_button("⬇️ PDF per classe", data=pdfA, file_name="wupi_ordini_pending_dettaglio.pdf", mime="application/pdf")
+            st.download_button("⬇️ PDF riepilogo", data=pdfB, file_name="wupi_ordini_pending_riepilogo.pdf", mime="application/pdf")
 
     st.markdown("### Riepilogo per classe")
-    st.dataframe(model["summary"], use_container_width=True, hide_index=True)
+    if not model["summary"].empty:
+        st.dataframe(model["summary"], use_container_width=True, hide_index=True)
+    else:
+        st.info("Nessun ordine pending trovato in questo file.")
 
     st.markdown("### Dettaglio")
     cls = st.selectbox("Classe", options=model["classes"], index=0 if model["classes"] else None)
@@ -1066,7 +1078,6 @@ def page_pending(df_raw: pd.DataFrame) -> None:
         det = pd.DataFrame(model["by_class"][cls])
         det = det.rename(columns={"orderId":"N. Ordine","displayName":"Nome","importo":"Importo €"})[["N. Ordine","Nome","Importo €"]]
         st.dataframe(det, use_container_width=True, hide_index=True)
-
 
 # -------------------------
 # Bibbia maker (A3) — da XLSX + mockup batch
