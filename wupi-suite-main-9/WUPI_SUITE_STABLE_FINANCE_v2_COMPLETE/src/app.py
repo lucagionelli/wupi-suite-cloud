@@ -473,6 +473,15 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
 def global_css() -> None:
     st.markdown("""
 <style>
+/* Nasconde la banda laterale di default (il menu a sinistra vuoto) */
+[data-testid="collapsedControl"] {
+    display: none !important;
+}
+
+/* Nasconde le icone a forma di catena a sinistra dei titoli */
+[data-testid="stHeaderActionElements"] {
+    display: none !important;
+}
 /* Sfondo principale pulito e solido */
 .stApp {
     background-color: #ffffff;
