@@ -31,6 +31,7 @@ STATE_PATH = APP_SUPPORT / "state_confirm.json"
 COSTS_PATH = APP_SUPPORT / "costs.json"
 BIBBIA_MANUAL_PATH = APP_SUPPORT / "bibbia_manual.json"
 SUBS_PATH = APP_SUPPORT / "subs.json"
+CUSTOM_SUPP_PATH = APP_SUPPORT / "custom_suppliers.json"
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 if not ASSETS_DIR.exists():
@@ -175,6 +176,14 @@ def load_subs() -> Dict:
 def save_subs(data: Dict) -> None:
     SUBS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SUBS_PATH.write_text(json_dumps(data), encoding="utf-8")
+
+def load_custom_suppliers() -> list:
+    try: return json_loads(CUSTOM_SUPP_PATH.read_text(encoding="utf-8"))
+    except Exception: return []
+
+def save_custom_suppliers(data: list) -> None:
+    CUSTOM_SUPP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CUSTOM_SUPP_PATH.write_text(json_dumps(data), encoding="utf-8")
 
 def json_dumps(d: Dict) -> str:
     import json
@@ -347,12 +356,18 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
             val = r[c]
             if pd.isna(val): val = ""
             
-            # Aggiunta sostituto dinamico SOLO per quel colore
+            # Aggiunta sostituto dinamico SOLO per quel colore (FORNITORE_SKU in nero)
             if c == "SKU":
                 sub_key = f"{sku_raw}||{col_raw}"
-                sub_val = subs.get(sub_key, "")
-                if sub_val:
-                    val = f'{val}<br><span style="font-size:11px; font-weight:800; color:#000000; letter-spacing:0.5px;">{sub_val.upper()}</span>'
+                sub_data = subs.get(sub_key, {})
+                if isinstance(sub_data, str):
+                    sub_data = {"fornitore": "Altro", "sku": sub_data}
+                    
+                if isinstance(sub_data, dict) and sub_data.get("sku"):
+                    f_name = sub_data.get("fornitore", "").upper()
+                    s_name = sub_data.get("sku", "").upper()
+                    disp = f"{f_name}_{s_name}" if f_name and f_name != "ALTRO" else s_name
+                    val = f'{val}<br><span style="font-size:11px; font-weight:800; color:#000000; letter-spacing:0.5px;">{disp}</span>'
                     
             html.append(f'<td class="{cls} {align}">{val}</td>')
         html.append('</tr>')
@@ -547,16 +562,6 @@ a, a:visited { color:#1d1d1f; }
 }
 [data-testid="stMetric"] { padding: 16px; }
 
-/* Taglie (pills) globali */
-.chips { display:flex; flex-wrap:wrap; gap:6px; }
-.chip {
-  display:inline-flex; gap:6px; align-items:center;
-  padding: 4px 10px; border-radius: 8px;
-  background-color: #f0f0f2;
-  font-size: 13px; font-weight: 500; color: #555;
-}
-.chip .q { font-weight:700; font-size:14px; color: #1d1d1f; }
-
 .wupi-gap-after-pivot { height: 14px; }
 </style>
 """, unsafe_allow_html=True)
@@ -588,10 +593,16 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
         for _, r in group.iterrows():
             col = str(r["Colore"])
             sub_key = f"{clean_str(sku)}||{clean_str(col)}"
-            sub_val = subs.get(sub_key, "")
+            
+            sub_data = subs.get(sub_key, {})
+            if isinstance(sub_data, str):
+                sub_data = {"fornitore": "Altro", "sku": sub_data}
 
-            if sub_val:
-                col_p = Paragraph(f"{col}<br/><font color='#e53935' size='7'><b>SUB: {sub_val}</b></font>", styles['Normal'])
+            if isinstance(sub_data, dict) and sub_data.get("sku"):
+                f_name = sub_data.get("fornitore", "").upper()
+                s_name = sub_data.get("sku", "").upper()
+                disp = f"{f_name}_{s_name}" if f_name and f_name != "ALTRO" else s_name
+                col_p = Paragraph(f"{col}<br/><font color='#1d1d1f' size='8'><b>{disp}</b></font>", styles['Normal'])
                 row = [col_p]
             else:
                 row = [col]
@@ -1793,22 +1804,84 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
         st.success("PDF Griglia pronto per il download!")
         st.download_button("⬇️ Scarica PDF Griglia (8 in 1)", data=pdf, file_name="wupi_bibbia_griglia.pdf", mime="application/pdf", use_container_width=True)
 
-@st.dialog("Aggiungi SKU Sostitutivo")
+
+@st.dialog("Gestione SKU Sostitutivi")
 def substitute_modal(sku_color_options):
-    st.markdown("Seleziona la combinazione SKU + Colore originale a cui vuoi assegnare un rimpiazzo.")
-    sel = st.selectbox("SKU e Colore Originale", options=sku_color_options)
-    sub_val = st.text_input("Inserisci SKU/Nome sostitutivo", placeholder="Es. JOKER-NEW")
+    if "sub_idx" not in st.session_state: 
+        st.session_state.sub_idx = 0
     
-    if st.button("Salva Sostituto", type="primary", use_container_width=True):
-        subs = load_subs()
-        sku, color = [x.strip() for x in sel.split(" — ", 1)]
-        k = f"{clean_str(sku)}||{clean_str(color)}"
-        if sub_val.strip():
-            subs[k] = clean_str(sub_val).upper()
-        else:
-            subs.pop(k, None)
-        save_subs(subs)
-        st.rerun()
+    if st.session_state.sub_idx >= len(sku_color_options):
+        st.session_state.sub_idx = 0
+        
+    c_nav1, c_nav2 = st.columns([4, 1])
+    with c_nav1:
+        sel_val = st.selectbox("Seleziona rapidamente (oppure usa le frecce):", options=sku_color_options, index=st.session_state.sub_idx)
+        if sel_val != sku_color_options[st.session_state.sub_idx]:
+            st.session_state.sub_idx = sku_color_options.index(sel_val)
+            st.rerun()
+    with c_nav2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("❌ Chiudi", use_container_width=True):
+            st.session_state.show_sub_modal = False
+            st.rerun()
+
+    current_sel = sku_color_options[st.session_state.sub_idx]
+    sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
+    k = f"{clean_str(sku)}||{clean_str(color)}"
+    
+    subs = load_subs()
+    sub_data = subs.get(k, {})
+    if isinstance(sub_data, str):
+        sub_data = {"fornitore": "Altro", "sku": sub_data}
+        
+    curr_forn = sub_data.get("fornitore", "ActionWear")
+    curr_sku = sub_data.get("sku", "")
+
+    custom_sups = load_custom_suppliers()
+    base_sups = ["ActionWear", "Basic", "Roly", "Top-Tex", "Stanley/Stella", "Innova"]
+    all_sups = base_sups + custom_sups + ["Altro"]
+    
+    idx_forn = all_sups.index(curr_forn) if curr_forn in all_sups else all_sups.index("Altro")
+    
+    with st.form(f"sub_form_{st.session_state.sub_idx}", clear_on_submit=False):
+        st.markdown(f"Stai modificando: **{sku}** — Variante **{color}**")
+        
+        f1, f2 = st.columns(2)
+        with f1:
+            sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
+            if sel_forn == "Altro":
+                altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "")
+            else:
+                altro_forn = ""
+        with f2:
+            new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
+            
+        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+        
+        b1, b2, b3 = st.columns(3)
+        with b1: btn_prev = st.form_submit_button("⬅️ Salva e Precedente", use_container_width=True)
+        with b2: btn_save = st.form_submit_button("💾 Salva (Invio)", type="primary", use_container_width=True)
+        with b3: btn_next = st.form_submit_button("Salva e Successivo ➡️", use_container_width=True)
+        
+        if btn_prev or btn_save or btn_next:
+            final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
+            final_sku = new_sku.strip()
+            
+            if final_forn and final_forn not in base_sups and final_forn not in custom_sups and final_forn != "Altro":
+                custom_sups.append(final_forn)
+                save_custom_suppliers(custom_sups)
+            
+            if final_sku:
+                subs[k] = {"fornitore": final_forn, "sku": final_sku}
+            else:
+                subs.pop(k, None)
+                
+            save_subs(subs)
+            
+            if btn_prev: st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
+            if btn_next: st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
+            
+            st.rerun()
 
 # -------------------------
 # UI
@@ -1823,7 +1896,7 @@ def main() -> None:
     top_l, top_r = st.columns([7, 1])
     with top_l:
         st.title("WUPI Suite")
-        st.caption(f"Build: STUDIO_v6_PDF_DISTINTA (stable)")
+        st.caption(f"Build: STUDIO_v7_WIZARD (stable)")
     with top_r:
         if LOGO_PATH.exists():
             st.image(str(LOGO_PATH), use_container_width=True)
@@ -1856,12 +1929,20 @@ def main() -> None:
         c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
         with c_search:
             q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
+            
+        if "show_sub_modal" not in st.session_state: 
+            st.session_state.show_sub_modal = False
+            
         with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🔄 SKU Sostitutivo", use_container_width=True):
-                pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
-                sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
-                substitute_modal(sku_color_options)
+                st.session_state.show_sub_modal = True
+
+        if st.session_state.show_sub_modal:
+            pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
+            sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
+            substitute_modal(sku_color_options)
+
         with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
             pdf_bytes = make_order_summary_pdf(piv_full, subs)
