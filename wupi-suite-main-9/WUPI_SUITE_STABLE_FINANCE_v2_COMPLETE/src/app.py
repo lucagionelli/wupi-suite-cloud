@@ -1919,7 +1919,7 @@ def main() -> None:
             st.download_button("⬇️ Scarica PDF", data=pdf, file_name="wupi_etichette.pdf", mime="application/pdf")
 
     with tabs[2]:
-        page_pending(df_raw)
+        page_pending(df)
 
     with tabs[3]:
         page_bibbia(df)
