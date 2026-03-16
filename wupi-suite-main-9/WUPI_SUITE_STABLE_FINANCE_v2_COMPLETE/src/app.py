@@ -32,6 +32,7 @@ COSTS_PATH = APP_SUPPORT / "costs.json"
 BIBBIA_MANUAL_PATH = APP_SUPPORT / "bibbia_manual.json"
 SUBS_PATH = APP_SUPPORT / "subs.json"
 CUSTOM_SUPP_PATH = APP_SUPPORT / "custom_suppliers.json"
+STOCK_PATH = APP_SUPPORT / "stock.json"
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 if not ASSETS_DIR.exists():
@@ -177,6 +178,14 @@ def save_subs(data: Dict) -> None:
     SUBS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SUBS_PATH.write_text(json_dumps(data), encoding="utf-8")
 
+def load_stock() -> Dict:
+    try: return json_loads(STOCK_PATH.read_text(encoding="utf-8"))
+    except Exception: return {}
+
+def save_stock(data: Dict) -> None:
+    STOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STOCK_PATH.write_text(json_dumps(data), encoding="utf-8")
+
 def load_custom_suppliers() -> list:
     try: return json_loads(CUSTOM_SUPP_PATH.read_text(encoding="utf-8"))
     except Exception: return []
@@ -295,7 +304,7 @@ def pivot_report(df: pd.DataFrame) -> pd.DataFrame:
     piv["Totale"] = piv[qty_cols].sum(axis=1).astype(int)
     return piv
 
-def render_pivot_html(piv: pd.DataFrame, confirmed: set[str], subs: dict) -> None:
+def render_pivot_html(piv: pd.DataFrame, confirmed: set[str], subs: dict, file_stock: dict) -> None:
     view = piv.copy()
     for c in [s for s in SIZE_ORDER if s in view.columns]:
         view[c] = view[c].replace({0: ""})
@@ -350,14 +359,35 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
         tr_cls = "confirmed" if k in confirmed else ""
         html.append(f'<tr class="{tr_cls}">')
         
+        # Calcolo del totale reale da ordinare (sottraendo il magazzino)
+        row_order_tot = 0
+        for sc in SIZE_ORDER:
+            if sc in cols:
+                val = r[sc]
+                if pd.notna(val) and val != "":
+                    val_int = int(val)
+                    stock_k = f"{sku_raw}||{col_raw}||{sc}"
+                    stock_qty = file_stock.get(stock_k, 0)
+                    row_order_tot += max(0, val_int - stock_qty)
+
         for c in cols:
             cls = "tot" if c == "Totale" else ""
             align = "center" if c in SIZE_ORDER + ["Totale"] else ""
             val = r[c]
-            if pd.isna(val): val = ""
             
-            # Aggiunta sostituto dinamico SOLO per quel file e quel colore
-            if c == "SKU":
+            if c == "Totale":
+                val = row_order_tot
+                
+            elif c in SIZE_ORDER:
+                if pd.notna(val) and val != "":
+                    val_int = int(val)
+                    stock_k = f"{sku_raw}||{col_raw}||{c}"
+                    stock_qty = file_stock.get(stock_k, 0)
+                    if stock_qty > 0:
+                        order_qty = max(0, val_int - stock_qty)
+                        val = f"{order_qty}<br><span style='font-size:10px; color:#86868b; font-weight:normal;'>({stock_qty} mag)</span>"
+                        
+            elif c == "SKU":
                 sub_key = f"{sku_raw}||{col_raw}"
                 sub_data = subs.get(sub_key, {})
                 if isinstance(sub_data, str):
@@ -368,7 +398,8 @@ tr.confirmed td.tot {{ background-color: #ccebcc; }}
                     s_name = sub_data.get("sku", "").upper()
                     disp = f"{f_name}_{s_name}" if f_name and f_name != "ALTRO" else s_name
                     val = f'{val}<br><span style="font-size:11px; font-weight:800; color:#000000; letter-spacing:0.5px;">{disp}</span>'
-                    
+            
+            if pd.isna(val): val = ""
             html.append(f'<td class="{cls} {align}">{val}</td>')
         html.append('</tr>')
 
@@ -426,6 +457,35 @@ def cards_css() -> None:
 </style>
 """, unsafe_allow_html=True)
 
+@st.dialog("Gestione Magazzino 📦")
+def warehouse_modal(sku: str, color: str, items: list, file_sig: str):
+    st.markdown(f"Indica quanti pezzi hai già in studio e vuoi **prelevare dal magazzino** per lo SKU **{sku}** (Variante: **{color}**)")
+    
+    all_stock = load_stock()
+    file_stock = all_stock.get(file_sig, {})
+    
+    with st.form(f"wh_form_{sku}_{color}"):
+        new_stock = {}
+        cols = st.columns(3)
+        for i, (taglia, q_ord) in enumerate(items):
+            col = cols[i % 3]
+            k = f"{clean_str(sku)}||{clean_str(color)}||{taglia}"
+            curr_stock = file_stock.get(k, 0)
+            with col:
+                val = st.number_input(f"Taglia {taglia} (Richiesti {q_ord})", min_value=0, max_value=q_ord, value=min(curr_stock, q_ord), step=1, key=f"in_{k}")
+                new_stock[k] = val
+                
+        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
+        if st.form_submit_button("💾 Salva in Magazzino", type="primary", use_container_width=True):
+            for k, v in new_stock.items():
+                if v > 0:
+                    file_stock[k] = v
+                else:
+                    file_stock.pop(k, None)
+            all_stock[file_sig] = file_stock
+            save_stock(all_stock)
+            st.rerun()
+
 def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str], state_sig: str, state: Dict) -> None:
     cards_css()
     sub = df[(df["SKU"] == sku) & (df["Nome Prodotto"] == prod)].copy()
@@ -433,6 +493,7 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
         st.info("Nessun dato per questo SKU/prodotto.")
         return
 
+    file_stock = load_stock().get(state_sig, {})
     total_sku = int(sub["Pezzi"].sum())
     st.subheader(f"{sku} - {total_sku} pz")
     st.caption("Colori e taglie per questo SKU. Usa 🛒 Conferma per segnare un colore come già ordinato.")
@@ -450,7 +511,15 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
         col = cols[i % 3]
         k = normalize_key(key_row(clean_str(sku), clean_str(prod), clean_str(color)))
         is_done = k in confirmed
-        chips = "".join([f'<span class="chip">{t}<span class="q">{q}</span></span>' for t, q in items])
+        
+        chips = ""
+        for t, q in items:
+            stock_k = f"{clean_str(sku)}||{clean_str(color)}||{t}"
+            sq = file_stock.get(stock_k, 0)
+            if sq > 0:
+                chips += f'<span class="chip">{t} <span class="q">{q-sq} <span style="font-size:11px; color:#86868b; font-weight:500;">(+{sq}📦)</span></span></span>'
+            else:
+                chips += f'<span class="chip">{t} <span class="q">{q}</span></span>'
 
         with col:
             st.markdown(f"""
@@ -463,7 +532,7 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
 </div>
 """, unsafe_allow_html=True)
             st.markdown('<div style="height:16px"></div>', unsafe_allow_html=True)
-            b1, b2 = st.columns(2)
+            b1, b2, b3 = st.columns([4, 4, 2])
             with b1:
                 if st.button("✓ Conferma", key=f"conf__{hashlib.md5(k.encode()).hexdigest()}", disabled=is_done, use_container_width=True):
                     confirmed.add(normalize_key(k))
@@ -478,6 +547,9 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
                     save_state(state)
                     st.session_state["confirmed"] = set(confirmed)
                     st.rerun()
+            with b3:
+                if st.button("📦", key=f"wh_btn_{hashlib.md5(k.encode()).hexdigest()}", help="Preleva da Magazzino", use_container_width=True):
+                    warehouse_modal(sku, color, items, state_sig)
 
     _, r1, r2 = st.columns([6, 2, 2])
     with r1:
@@ -569,7 +641,7 @@ a, a:visited { color:#1d1d1f; }
 # -------------------------
 # PDF Ordine Fornitore
 # -------------------------
-def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
+def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=12*mm, leftMargin=12*mm, topMargin=15*mm, bottomMargin=15*mm)
     elements = []
@@ -577,6 +649,7 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
 
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, spaceAfter=12, textColor=colors.HexColor("#1d1d1f"))
     sku_style = ParagraphStyle('SkuStyle', parent=styles['Heading2'], fontSize=13, spaceBefore=12, spaceAfter=6, textColor=colors.HexColor("#1d1d1f"))
+    centered_style = ParagraphStyle('CenteredStyle', parent=styles['Normal'], alignment=1, leading=10)
 
     elements.append(Paragraph("Distinta Ordine Fornitore", title_style))
 
@@ -584,11 +657,10 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
     grouped = piv_df.groupby(["SKU", "Nome Prodotto"], sort=False)
 
     for (sku, prod), group in grouped:
-        # Array che contiene tutti gli elementi dello SKU che NON devono essere spezzati
         block = []
         
         tot_sku = int(group["Totale"].sum())
-        block.append(Paragraph(f"<b>{sku}</b> — {prod} <font color='#86868b'>(Tot: {tot_sku} pz)</font>", sku_style))
+        block.append(Paragraph(f"<b>{sku}</b> — {prod} <font color='#86868b'>(Tot lordo: {tot_sku} pz)</font>", sku_style))
 
         header = ["Colore"] + size_cols + ["Totale"]
         data = [header]
@@ -610,13 +682,30 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
             else:
                 row = [col]
 
+            row_order_tot = 0
             for sc in size_cols:
                 val = r[sc]
-                row.append(str(val) if val > 0 else "")
-            row.append(str(int(r["Totale"])))
+                if pd.notna(val) and val != "":
+                    val_int = int(val)
+                    stock_k = f"{clean_str(sku)}||{clean_str(col)}||{sc}"
+                    stock_qty = file_stock.get(stock_k, 0)
+                    order_qty = max(0, val_int - stock_qty)
+                    row_order_tot += order_qty
+                    
+                    if stock_qty > 0:
+                        if order_qty > 0:
+                            cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font><br/><font size='7' color='#86868b'>{stock_qty} mag.</font>", centered_style)
+                        else:
+                            cell_p = Paragraph(f"<font size='7' color='#4caf50'><b>{stock_qty} mag.</b></font>", centered_style)
+                        row.append(cell_p)
+                    else:
+                        row.append(str(val_int))
+                else:
+                    row.append("")
+                    
+            row.append(str(row_order_tot))
             data.append(row)
 
-        # hAlign='LEFT' assicura che l'intera tabella sia a filo del margine sinistro
         t = Table(data, repeatRows=1, hAlign='LEFT')
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#fafafc")),
@@ -636,8 +725,6 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict) -> bytes:
         
         block.append(t)
         block.append(Spacer(1, 6*mm))
-        
-        # KeepTogether racchiude il blocco: se non c'è spazio, sposta tutto alla pagina seguente
         elements.append(KeepTogether(block))
 
     doc.build(elements)
@@ -1908,7 +1995,7 @@ def main() -> None:
     top_l, top_r = st.columns([7, 1])
     with top_l:
         st.title("WUPI Suite")
-        st.caption(f"Build: STUDIO_v10_PDF_ALIGN_KEEPTOGETHER (stable)")
+        st.caption(f"Build: STUDIO_v11_MAGAZZINO (stable)")
     with top_r:
         if LOGO_PATH.exists():
             st.image(str(LOGO_PATH), use_container_width=True)
@@ -1932,6 +2019,9 @@ def main() -> None:
 
     all_subs = load_subs()
     subs = all_subs.get(sig, {})
+    
+    all_stock = load_stock()
+    file_stock = all_stock.get(sig, {})
 
     tabs = st.tabs(["📦 Report acquisto", "🏷 Etichette", "💸 Ordini da pagare", "📖 Bibbia maker", "💰 Finanze"])
     with tabs[0]:
@@ -1958,7 +2048,7 @@ def main() -> None:
 
         with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
-            pdf_bytes = make_order_summary_pdf(piv_full, subs)
+            pdf_bytes = make_order_summary_pdf(piv_full, subs, file_stock)
             st.download_button("📄 PDF Ordine", data=pdf_bytes, file_name="wupi_ordine_fornitore.pdf", mime="application/pdf", use_container_width=True)
 
         piv_view = piv_full
@@ -1970,7 +2060,7 @@ def main() -> None:
                 | piv_full["Colore"].astype(str).str.contains(qq, case=False, na=False)
             ].copy()
 
-        render_pivot_html(piv_view, confirmed, subs)
+        render_pivot_html(piv_view, confirmed, subs, file_stock)
         st.markdown('<div class="wupi-gap-after-pivot"></div>', unsafe_allow_html=True)
 
         pairs = piv_full[["SKU", "Nome Prodotto"]].drop_duplicates().sort_values(["SKU", "Nome Prodotto"], kind="stable")
