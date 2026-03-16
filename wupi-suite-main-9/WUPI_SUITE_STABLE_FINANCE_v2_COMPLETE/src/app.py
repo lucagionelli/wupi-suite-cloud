@@ -27,6 +27,7 @@ APP_SUPPORT = Path(__file__).resolve().parent / "wupi_data"
 STATE_PATH = APP_SUPPORT / "state_confirm.json"
 COSTS_PATH = APP_SUPPORT / "costs.json"
 BIBBIA_MANUAL_PATH = APP_SUPPORT / "bibbia_manual.json"
+SUBS_PATH = APP_SUPPORT / "subs.json"
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 if not ASSETS_DIR.exists():
@@ -34,143 +35,48 @@ if not ASSETS_DIR.exists():
 LOGO_PATH = ASSETS_DIR / "wupi.png"
 FAVICON_PATH = ASSETS_DIR / "favicon.png"
 
-GREEN = "#d7f7d7"
-
 # Normalizzazione colori per match mockup
 COLOR_ALIAS_MAP = {
-  "arancione": "arancione",
-  "bianco": "bianco",
-  "bk": "nero",
-  "black": "nero",
-  "blu": "navy",
-  "blu_navy": "navy",
-  "blu_royal": "royal",
-  "blunavy": "navy",
-  "bluroyal": "royal",
-  "bu": "burgundy",
-  "burgundy": "burgundy",
-  "ca": "cardinal",
-  "caramel": "dark_caramel",
-  "cardinal": "cardinal",
-  "cardinal_red": "cardinal",
-  "cardinalred": "cardinal",
-  "ch": "chocolate",
-  "chocolate": "chocolate",
-  "dark_caramel": "dark_caramel",
-  "dark_grey": "dark_grey",
-  "darkcaramel": "dark_caramel",
-  "darkgrey": "dark_grey",
-  "dc": "dark_caramel",
-  "dg": "dark_grey",
-  "dp": "dusty_pink",
-  "dusty_pink": "dusty_pink",
-  "dustypink": "dusty_pink",
-  "du": "dusty_green",
-  "dusty_green": "dusty_green",
-  "dustygreen": "dusty_green",
-  "dusty_green_": "dusty_green",
-  "earth_green": "military",
-  "earthgreen": "military",
-  "eg": "military",
-  "fg": "forest",
-  "forest": "forest",
-  "forest_green": "forest",
-  "forestgreen": "forest",
-  "giallo": "gold",
-  "go": "gold",
-  "gold": "gold",
-  "grey_heater": "grey_heather",
-  "grey_heather": "grey_heather",
-  "greyheater": "grey_heather",
-  "greyheather": "grey_heather",
-  "grigio_melange": "grey_heather",
-  "grigiomelange": "grey_heather",
-  "gy": "grey_heather",
-  "ib": "ink_blue",
-  "ig": "irish_green",
-  "ink_blue": "ink_blue",
-  "inkblue": "ink_blue",
-  "irish_green": "irish_green",
-  "irishgreen": "irish_green",
-  "jade": "salvia",
-  "jade_green": "salvia",
-  "jadegreen": "salvia",
-  "ma": "mastic",
-  "marrone": "chocolate",
-  "mastic": "mastic",
-  "mb": "mineral_blue",
-  "military": "military",
-  "mineral_blue": "mineral_blue",
-  "mineralblue": "mineral_blue",
-  "mocha": "chocolate",
-  "moka": "chocolate",
-  "mu": "mustard",
-  "mustard": "mustard",
-  "navy": "navy",
-  "navy_blue": "navy",
-  "navyblue": "navy",
-  "nero": "nero",
-  "ny": "navy",
-  "off_white": "off_white",
-  "offwhite": "off_white",
-  "ol": "olive",
-  "olive": "olive",
-  "or": "arancione",
-  "orange": "arancione",
-  "ow": "off_white",
-  "pe": "petroleum",
-  "peacock": "peacock_ink_blue",
-  "petroleum": "petroleum",
-  "pink": "rosa",
-  "pu": "purple",
-  "purple": "purple",
-  "rb": "royal",
-  "rd": "red",
-  "red": "red",
-  "ro": "rosa",
-  "rosa": "rosa",
-  "rosso": "red",
-  "rosso_cardinal": "cardinal",
-  "rossocardinal": "cardinal",
-  "royal": "royal",
-  "royal_blue": "royal",
-  "royalblue": "royal",
-  "ru": "rust",
-  "rust": "rust",
-  "sa": "salvia",
-  "salvia": "salvia",
-  "sand": "mastic",
-  "sky": "mineral_blue",
-  "urban_slate": "urban_slate",
-  "urban_slathe": "urban_slate",
-  "urbanslate": "urban_slate",
-  "urbanslathe": "urban_slate",
-  "us": "urban_slate",
-  "viola": "purple",
-  "wh": "bianco",
-  "white": "bianco",
-  "pk": "peacock_ink_blue",
-  "peacock_ink_blue": "peacock_ink_blue",
-  "peacockinkblue": "peacock_ink_blue",
-  "peacock_inkblue": "peacock_ink_blue",
-  "peacockink_blue": "peacock_ink_blue",
-  "lg": "light_grey",
-  "lightgrey": "light_grey",
-  "light_grey": "light_grey",
-  "light_gray": "light_grey",
-  "ac": "sand_almond_cream",
-  "almond_cream": "sand_almond_cream",
-  "sand_almond_cream": "sand_almond_cream",
-  "sandalmondcream": "sand_almond_cream",
-  "almond_sand_cream": "sand_almond_cream",
-  "almondsandcream": "sand_almond_cream",
-  "almond_sandcream": "sand_almond_cream",
-  "almondsand_cream": "sand_almond_cream",
-  "sand_cream_almond": "sand_almond_cream",
-  "cream_almond_sand": "sand_almond_cream",
-  "earthygreen": "military",
-  "earthy_green": "military",
-  "earthy green": "military",
+  "arancione": "arancione", "bianco": "bianco", "bk": "nero", "black": "nero",
+  "blu": "navy", "blu_navy": "navy", "blu_royal": "royal", "blunavy": "navy",
+  "bluroyal": "royal", "bu": "burgundy", "burgundy": "burgundy", "ca": "cardinal",
+  "caramel": "dark_caramel", "cardinal": "cardinal", "cardinal_red": "cardinal",
+  "cardinalred": "cardinal", "ch": "chocolate", "chocolate": "chocolate",
+  "dark_caramel": "dark_caramel", "dark_grey": "dark_grey", "darkcaramel": "dark_caramel",
+  "darkgrey": "dark_grey", "dc": "dark_caramel", "dg": "dark_grey", "dp": "dusty_pink",
+  "dusty_pink": "dusty_pink", "dustypink": "dusty_pink", "du": "dusty_green",
+  "dusty_green": "dusty_green", "dustygreen": "dusty_green", "dusty_green_": "dusty_green",
+  "earth_green": "military", "earthgreen": "military", "eg": "military", "fg": "forest",
+  "forest": "forest", "forest_green": "forest", "forestgreen": "forest",
+  "giallo": "gold", "go": "gold", "gold": "gold", "grey_heater": "grey_heather",
+  "grey_heather": "grey_heather", "greyheater": "grey_heather", "greyheather": "grey_heather",
+  "grigio_melange": "grey_heather", "grigiomelange": "grey_heather", "gy": "grey_heather",
+  "ib": "ink_blue", "ig": "irish_green", "ink_blue": "ink_blue", "inkblue": "ink_blue",
+  "irish_green": "irish_green", "irishgreen": "irish_green", "jade": "salvia",
+  "jade_green": "salvia", "jadegreen": "salvia", "ma": "mastic", "marrone": "chocolate",
+  "mastic": "mastic", "mb": "mineral_blue", "military": "military", "mineral_blue": "mineral_blue",
+  "mineralblue": "mineral_blue", "mocha": "chocolate", "moka": "chocolate", "mu": "mustard",
+  "mustard": "mustard", "navy": "navy", "navy_blue": "navy", "navyblue": "navy",
+  "nero": "nero", "ny": "navy", "off_white": "off_white", "offwhite": "off_white",
+  "ol": "olive", "olive": "olive", "or": "arancione", "orange": "arancione",
+  "ow": "off_white", "pe": "petroleum", "peacock": "peacock_ink_blue",
+  "petroleum": "petroleum", "pink": "rosa", "pu": "purple", "purple": "purple",
+  "rb": "royal", "rd": "red", "red": "red", "ro": "rosa", "rosa": "rosa",
+  "rosso": "red", "rosso_cardinal": "cardinal", "rossocardinal": "cardinal",
+  "royal": "royal", "royal_blue": "royal", "royalblue": "royal", "ru": "rust",
+  "rust": "rust", "sa": "salvia", "salvia": "salvia", "sand": "mastic",
+  "sky": "mineral_blue", "urban_slate": "urban_slate", "urban_slathe": "urban_slate",
+  "urbanslate": "urban_slate", "urbanslathe": "urban_slate", "us": "urban_slate",
+  "viola": "purple", "wh": "bianco", "white": "bianco", "pk": "peacock_ink_blue",
+  "peacock_ink_blue": "peacock_ink_blue", "peacockinkblue": "peacock_ink_blue",
+  "peacock_inkblue": "peacock_ink_blue", "peacockink_blue": "peacock_ink_blue",
+  "lg": "light_grey", "lightgrey": "light_grey", "light_grey": "light_grey",
+  "light_gray": "light_grey", "ac": "sand_almond_cream", "almond_cream": "sand_almond_cream",
+  "sand_almond_cream": "sand_almond_cream", "sandalmondcream": "sand_almond_cream",
+  "almond_sand_cream": "sand_almond_cream", "almondsandcream": "sand_almond_cream",
+  "almond_sandcream": "sand_almond_cream", "almondsand_cream": "sand_almond_cream",
+  "sand_cream_almond": "sand_almond_cream", "cream_almond_sand": "sand_almond_cream",
+  "earthygreen": "military", "earthy_green": "military", "earthy green": "military",
   "gh": "grey_heather"
 }
 
@@ -187,23 +93,16 @@ def file_sig(file_bytes: bytes) -> str:
     return hashlib.sha256(file_bytes).hexdigest()[:12]
 
 def clean_str(x) -> str:
-    # 1. Se è già una stringa, la puliamo subito (il 99% dei casi)
     if isinstance(x, str):
         s = x.strip()
         return "" if s.lower() in ("nan", "none", "null") else s
-    
-    # 2. Se è fisicamente vuota
     if x is None:
         return ""
-        
-    # 3. Controllo di sicurezza Pandas (Ignora le liste/array strani)
     try:
         if pd.isna(x):
             return ""
     except ValueError:
         pass
-        
-    # 4. Caso estremo: la convertiamo a forza in stringa
     s = str(x).strip()
     return "" if s.lower() in ("nan", "none", "null") else s
 
@@ -259,14 +158,20 @@ def ensure_cols(df: pd.DataFrame, cols: List[str]) -> None:
         raise ValueError(f"Colonne mancanti: {', '.join(missing)}")
 
 def load_state() -> Dict:
-    try:
-        return json_loads(STATE_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    try: return json_loads(STATE_PATH.read_text(encoding="utf-8"))
+    except Exception: return {}
 
 def save_state(data: Dict) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json_dumps(data), encoding="utf-8")
+
+def load_subs() -> Dict:
+    try: return json_loads(SUBS_PATH.read_text(encoding="utf-8"))
+    except Exception: return {}
+
+def save_subs(data: Dict) -> None:
+    SUBS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SUBS_PATH.write_text(json_dumps(data), encoding="utf-8")
 
 def json_dumps(d: Dict) -> str:
     import json
@@ -277,10 +182,8 @@ def json_loads(s: str) -> Dict:
     return json.loads(s)
 
 def load_costs() -> Dict:
-    try:
-        return json_loads(COSTS_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    try: return json_loads(COSTS_PATH.read_text(encoding="utf-8"))
+    except Exception: return {}
 
 def save_costs(data: Dict) -> None:
     COSTS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -290,17 +193,14 @@ def _cost_key(sku: str, product: str) -> str:
     return f"{clean_str(sku)}||{clean_str(product)}"
 
 def load_manual_mockups() -> Dict:
-    try:
-        raw = json_loads(BIBBIA_MANUAL_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        raw = {}
+    try: raw = json_loads(BIBBIA_MANUAL_PATH.read_text(encoding="utf-8"))
+    except Exception: raw = {}
     out = {}
     for k, v in raw.items():
         try:
             if isinstance(v, str) and Path(v).exists():
                 out[tuple(k.split("|||"))] = Path(v).read_bytes()
-        except Exception:
-            pass
+        except Exception: pass
     return out
 
 def save_manual_mockups(rawmap: Dict[str, str]) -> None:
@@ -312,10 +212,8 @@ def _parse_taglie_items(taglie_str: str) -> list[tuple[str, int]]:
     for part in clean_str(taglie_str).split():
         if ":" in part:
             t, q = part.split(":", 1)
-            try:
-                items.append((t, int(q)))
-            except Exception:
-                pass
+            try: items.append((t, int(q)))
+            except Exception: pass
     items.sort(key=lambda x: sort_size_key(x[0]))
     return items
 
@@ -325,8 +223,7 @@ def key_row(sku: str, prod: str, color: str) -> str:
 def normalize_key(k: str) -> str:
     try:
         parts = (k or "").split("||")
-        if len(parts) != 3:
-            return clean_str(k)
+        if len(parts) != 3: return clean_str(k)
         return key_row(clean_str(parts[0]), clean_str(parts[1]), clean_str(parts[2]))
     except Exception:
         return clean_str(k)
@@ -336,10 +233,8 @@ def canon_key(sku: str, prod: str, color: str) -> str:
 
 def sort_size_key(taglia: str) -> int:
     t = (taglia or "").upper().strip()
-    if t == "XXL":
-        t = "2XL"
-    if not t:
-        return 999
+    if t == "XXL": t = "2XL"
+    if not t: return 999
     return SIZE_ORDER.index(t) if t in SIZE_ORDER else 998
 
 def df_normalize(df: pd.DataFrame) -> pd.DataFrame:
@@ -354,18 +249,14 @@ def df_normalize(df: pd.DataFrame) -> pd.DataFrame:
     out["Pezzi"] = pd.to_numeric(out["Pezzi"], errors="coerce").fillna(0).astype(int)
     if "Prezzo unitario" in out.columns:
         out["Prezzo unitario"] = pd.to_numeric(out["Prezzo unitario"], errors="coerce").fillna(0.0)
-    else:
-        out["Prezzo unitario"] = 0.0
+    else: out["Prezzo unitario"] = 0.0
     if "Prezzo acquisto" in out.columns:
         out["Prezzo acquisto"] = pd.to_numeric(out["Prezzo acquisto"], errors="coerce").fillna(0.0)
-    else:
-        out["Prezzo acquisto"] = 0.0
+    else: out["Prezzo acquisto"] = 0.0
 
     for c in ["Nome Studente", "Cognome Studente", "Classe", "Docente/ATA", "N. Ordine", "Nome incisione"]:
-        if c in out.columns:
-            out[c] = out[c].map(clean_str)
-        else:
-            out[c] = "" if c != "N. Ordine" else ""
+        if c in out.columns: out[c] = out[c].map(clean_str)
+        else: out[c] = "" if c != "N. Ordine" else ""
 
     out["Studente"] = (out["Nome Studente"].fillna("") + " " + out["Cognome Studente"].fillna("")).str.replace(r"\s+", " ", regex=True).str.strip()
     is_doc = out["Nome Studente"].eq("") & out["Cognome Studente"].eq("")
@@ -392,7 +283,7 @@ def pivot_report(df: pd.DataFrame) -> pd.DataFrame:
     piv["Totale"] = piv[qty_cols].sum(axis=1).astype(int)
     return piv
 
-def render_pivot_html(piv: pd.DataFrame, confirmed: set[str]) -> None:
+def render_pivot_html(piv: pd.DataFrame, confirmed: set[str], subs: dict) -> None:
     view = piv.copy()
     for c in [s for s in SIZE_ORDER if s in view.columns]:
         view[c] = view[c].replace({0: ""})
@@ -420,8 +311,11 @@ table.wupi td {{ background-color: #ffffff; }}
 table.wupi td.tot, table.wupi th.tot {{ position:sticky; right:0; z-index:3; font-weight:700; }}
 table.wupi th.tot {{ background-color: #fafafc; border-left: 1px solid #f0f0f2; }}
 table.wupi td.tot {{ background-color: #fafafc; border-left: 1px solid #f0f0f2; }}
-tr.confirmed td {{ background-color: #f5f5f7; }}
-tr.confirmed td.tot {{ background-color: #eaeaef; }}
+
+/* Colori VERDI per le righe confermate */
+tr.confirmed td {{ background-color: #e6f7e6; }}
+tr.confirmed td.tot {{ background-color: #ccebcc; }}
+
 .center {{ text-align:center; }}
 </style>"""
 
@@ -438,7 +332,8 @@ tr.confirmed td.tot {{ background-color: #eaeaef; }}
     html.append('</tr></thead><tbody>')
 
     for _, r in view.iterrows():
-        k = normalize_key(key_row(clean_str(r.get("SKU", "")), clean_str(r.get("Nome Prodotto", "")), clean_str(r.get("Colore", ""))))
+        sku_raw = clean_str(r.get("SKU", ""))
+        k = normalize_key(key_row(sku_raw, clean_str(r.get("Nome Prodotto", "")), clean_str(r.get("Colore", ""))))
         tr_cls = "confirmed" if k in confirmed else ""
         html.append(f'<tr class="{tr_cls}">')
         for c in cols:
@@ -446,6 +341,13 @@ tr.confirmed td.tot {{ background-color: #eaeaef; }}
             align = "center" if c in SIZE_ORDER + ["Totale"] else ""
             val = r[c]
             if pd.isna(val): val = ""
+            
+            # Aggiunta sostituto dinamico
+            if c == "SKU":
+                sub_val = subs.get(sku_raw, "")
+                if sub_val:
+                    val = f'{val}<br><span style="font-size:11px; font-weight:800; color:#000000; letter-spacing:0.5px;">{sub_val.upper()}</span>'
+                    
             html.append(f'<td class="{cls} {align}">{val}</td>')
         html.append('</tr>')
 
@@ -472,11 +374,13 @@ def cards_css() -> None:
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
 }
-/* Card confermata grigio solido */
+
+/* Card confermata VERDE */
 .wupi-card.confirmed {
-  background-color: #f5f5f7;
-  border: 2px solid #1d1d1f;
+  background-color: #e6f7e6;
+  border: 2px solid #4caf50;
 }
+
 .card-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
 .color-name { font-weight:700; font-size:17px; letter-spacing:-0.3px; color: #1d1d1f; }
 .color-tot { font-weight:600; font-size:15px; color: #86868b; }
@@ -852,8 +756,7 @@ def to_number_it(v) -> float:
 def build_pending_model(df: pd.DataFrame) -> dict:
     d = df.copy()
 
-    # 1. Trova dinamicamente la colonna degli importi
-    importo_col = "Importo ordine" # fallback di sicurezza
+    importo_col = "Importo ordine" 
     for col in d.columns:
         c_norm = str(col).lower().replace("_", " ").strip()
         if any(x in c_norm for x in ["importo", "totale", "prezzo", "da pagare"]):
@@ -862,12 +765,10 @@ def build_pending_model(df: pd.DataFrame) -> dict:
 
     required = ["N. Ordine","Classe","Cognome Studente","Nome Studente","Docente/ATA","Pagamento", importo_col]
     
-    # Crea colonne vuote se mancano
     for c in required:
         if c not in d.columns: d[c] = ""
         d[c] = d[c].map(clean_str)
 
-    # 2. Rileva tutte le possibili diciture di "non pagato"
     pending_keywords = ["pending", "in attesa", "non pagato", "da pagare", "on-hold", "on hold"]
     pending = d[d["Pagamento"].map(normalize_pagamento).isin(pending_keywords)].copy()
 
@@ -919,6 +820,7 @@ def build_pending_model(df: pd.DataFrame) -> dict:
         "grand_total": round(grand_total, 2),
         "n_orders": len(unique_orders),
     }
+
 def pending_pdf_per_class_students(model: dict) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -1078,6 +980,7 @@ def page_pending(df_target: pd.DataFrame) -> None:
         det = pd.DataFrame(model["by_class"][cls])
         det = det.rename(columns={"orderId":"N. Ordine","displayName":"Nome","importo":"Importo €"})[["N. Ordine","Nome","Importo €"]]
         st.dataframe(det, use_container_width=True, hide_index=True)
+
 
 # -------------------------
 # Bibbia maker (A3) — da XLSX + mockup batch
@@ -1500,10 +1403,7 @@ def make_bibbia_pdf_single(variants: pd.DataFrame, mock_map: dict, cfg: BibbiaCf
 
 def make_bibbia_pdf_grid(variants: pd.DataFrame, mock_map: dict, cfg: BibbiaCfg, brand_logo: bytes | None = None) -> bytes:
     from reportlab.lib.pagesizes import A3
-    # A3 verticale come base della griglia
     page_w, page_h = A3 
-    
-    # La dimensione "virtuale" è l'A3 orizzontale originale
     vw, vh = landscape(A3) 
     
     cols = 2
@@ -1512,7 +1412,6 @@ def make_bibbia_pdf_grid(variants: pd.DataFrame, mock_map: dict, cfg: BibbiaCfg,
     cell_w = page_w / cols
     cell_h = page_h / rows
     
-    # Scaliamo perfettamente l'A3 Orizzontale dentro la cella 1/8 di un A3 Verticale
     scale_factor = cell_w / vw 
     
     buf = io.BytesIO()
@@ -1537,7 +1436,6 @@ def make_bibbia_pdf_grid(variants: pd.DataFrame, mock_map: dict, cfg: BibbiaCfg,
         _draw_bibbia_variant(c, r, mock_map, cfg, logo_img, vw, vh)
         c.restoreState()
         
-        # Disegniamo una sottile linea grigia attorno alla cella come guida per il taglio
         c.setLineWidth(0.5)
         c.setStrokeColorRGB(0.85, 0.85, 0.85)
         c.rect(px, py, cell_w, cell_h)
@@ -1741,7 +1639,6 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
     with h5: st.markdown("<div class='bibbia-header'>Fronte</div>", unsafe_allow_html=True)
     with h6: st.markdown("<div class='bibbia-header'>Retro</div>", unsafe_allow_html=True)
 
-    # QUI ABBIAMO AGGIUNTO 'idx' PER EVITARE I DOPPIONI
     for idx, r in variants.iterrows():
         c1, c2, c3, c4, c5, c6 = st.columns([1.5, 2.5, 3, 2.5, 1, 1])
         
@@ -1809,6 +1706,21 @@ def page_bibbia(df_norm: pd.DataFrame) -> None:
         st.success("PDF Griglia pronto per il download!")
         st.download_button("⬇️ Scarica PDF Griglia (8 in 1)", data=pdf, file_name="wupi_bibbia_griglia.pdf", mime="application/pdf", use_container_width=True)
 
+@st.dialog("Aggiungi SKU Sostitutivo")
+def substitute_modal(sku_options):
+    st.markdown("Seleziona lo SKU originale a cui vuoi assegnare un rimpiazzo.")
+    sel_sku = st.selectbox("SKU Originale", options=sku_options)
+    sub_val = st.text_input("Inserisci SKU/Nome sostitutivo", placeholder="Es. JOKER-NEW")
+    
+    if st.button("Salva Sostituto", type="primary", use_container_width=True):
+        subs = load_subs()
+        if sub_val.strip():
+            subs[clean_str(sel_sku)] = clean_str(sub_val).upper()
+        else:
+            subs.pop(clean_str(sel_sku), None)
+        save_subs(subs)
+        st.rerun()
+
 # -------------------------
 # UI
 # -------------------------
@@ -1822,7 +1734,7 @@ def main() -> None:
     top_l, top_r = st.columns([7, 1])
     with top_l:
         st.title("WUPI Suite")
-        st.caption(f"Build: STUDIO_v4_GRID (stable) • {Path(__file__).resolve()}")
+        st.caption(f"Build: STUDIO_v5_GREEN_UX (stable)")
     with top_r:
         if LOGO_PATH.exists():
             st.image(str(LOGO_PATH), use_container_width=True)
@@ -1844,13 +1756,23 @@ def main() -> None:
         st.session_state["confirmed_sig"] = sig
     confirmed = st.session_state["confirmed"]
 
+    subs = load_subs()
+
     tabs = st.tabs(["📦 Report acquisto", "🏷 Etichette", "💸 Ordini da pagare", "📖 Bibbia maker", "💰 Finanze"])
     with tabs[0]:
         st.subheader("Pivot ordine fornitore")
-        st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano grigie chiare.")
+        st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano VERDI.")
         piv_full = pivot_report(df)
 
-        q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
+        c_search, c_sub = st.columns([5, 1])
+        with c_search:
+            q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
+        with c_sub:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🔄 SKU Sostitutivo", use_container_width=True):
+                sku_list = sorted(piv_full["SKU"].unique())
+                substitute_modal(sku_list)
+
         piv_view = piv_full
         if q:
             qq = str(q).strip()
@@ -1860,7 +1782,7 @@ def main() -> None:
                 | piv_full["Colore"].astype(str).str.contains(qq, case=False, na=False)
             ].copy()
 
-        render_pivot_html(piv_view, confirmed)
+        render_pivot_html(piv_view, confirmed, subs)
         st.markdown('<div class="wupi-gap-after-pivot"></div>', unsafe_allow_html=True)
 
         pairs = piv_full[["SKU", "Nome Prodotto"]].drop_duplicates().sort_values(["SKU", "Nome Prodotto"], kind="stable")
