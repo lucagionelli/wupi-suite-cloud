@@ -323,18 +323,25 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
         
         row_order_tot = 0
         row_stock_tot = 0
+        row_original_tot = 0
+        
         for sc in size_cols:
             val = r[sc]
             if pd.notna(val) and val != "":
                 val_int = int(val)
                 stock_k = f"{sku_raw}||{col_raw}||{clean_str(sc)}"
                 stock_qty = file_stock.get(stock_k, 0)
+                
+                row_original_tot += val_int
                 row_stock_tot += stock_qty
                 row_order_tot += max(0, val_int - stock_qty)
 
+        # LA NUOVA LOGICA DEI COLORI
         tr_cls = ""
-        if row_stock_tot > 0: tr_cls = "warehouse"
-        elif k in confirmed: tr_cls = "confirmed"
+        if row_original_tot > 0 and row_stock_tot >= row_original_tot:
+            tr_cls = "warehouse"  # Azzurro solo se TUTTO è preso da magazzino
+        elif k in confirmed:
+            tr_cls = "confirmed"  # Verde se hai premuto Conferma (acquisto totale o parziale)
 
         html.append(f'<tr class="{tr_cls}">')
 
@@ -374,7 +381,6 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
 
     html.append('</tbody></table></div>')
     st.markdown("".join(html), unsafe_allow_html=True)
-
 def cards_css() -> None:
     st.markdown("""
 <style>
@@ -427,12 +433,12 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
         chips = ""
         color_stock_tot = 0
         for t, q in items:
-            # Blindiamo la chiave magazzino
             stock_k = f"{clean_str(sku)}||{clean_str(color)}||{clean_str(t)}"
             sq = file_stock.get(stock_k, 0)
             color_stock_tot += sq
             if sq > 0:
-                chips += f'<span class="chip">{t} <span class="q">{q-sq} <span style="font-size:11px; color:#86868b; font-weight:500;">(+{sq}📦)</span></span></span>'
+                # Mostra quanti ne rimangono da ordinare e tra parentesi quelli presi da magazzino
+                chips += f'<span class="chip">{t} <span class="q">{max(0, q-sq)} <span style="font-size:11px; color:#86868b; font-weight:500;">(+{sq}📦)</span></span></span>'
             else:
                 chips += f'<span class="chip">{t} <span class="q">{q}</span></span>'
 
@@ -466,7 +472,7 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
                     st.session_state["confirmed"] = set(confirmed)
                     st.rerun()
             with b3:
-                # IL PIANO B: Menu a tendina nativo al posto della modale!
+                # Il Popover blindato per il Magazzino
                 with st.popover("📦", use_container_width=True):
                     st.markdown(f"**Magazzino {color if color else ''}**")
                     with st.form(f"wh_form_{hashlib.md5(k.encode()).hexdigest()}"):
@@ -485,6 +491,22 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
                             save_stock(proj_dir, stk)
                             st.rerun()
 
+    _, r1, r2 = st.columns([6, 2, 2])
+    with r1:
+        if st.button("✓ Conferma tutto lo SKU", key=f"all_{sku}_{prod}", use_container_width=True):
+            for color, _, _ in blocks:
+                confirmed.add(normalize_key(key_row(sku, prod, color)))
+            save_state(proj_dir, sorted(list(confirmed)))
+            st.session_state['confirmed'] = set(confirmed)
+            st.session_state['advance_next_sku'] = True
+            st.rerun()
+    with r2:
+        if st.button("↩︎ Annulla tutto lo SKU", key=f"unall_{sku}_{prod}", use_container_width=True):
+            for color, _, _ in blocks:
+                confirmed.discard(normalize_key(key_row(sku, prod, color)))
+            save_state(proj_dir, sorted(list(confirmed)))
+            st.session_state["confirmed"] = set(confirmed)
+            st.rerun()
     _, r1, r2 = st.columns([6, 2, 2])
     with r1:
         if st.button("✓ Conferma tutto lo SKU", key=f"all_{sku}_{prod}", use_container_width=True):
