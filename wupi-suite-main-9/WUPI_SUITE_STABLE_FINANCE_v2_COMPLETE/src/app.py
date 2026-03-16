@@ -237,6 +237,10 @@ def df_normalize(df: pd.DataFrame) -> pd.DataFrame:
     out["Nome Prodotto"] = out["Nome Prodotto"].map(clean_str)
     out["Colore"] = out["Colore"].map(clean_str)  
     out["Taglia"] = out["Taglia"].map(normalize_size)
+    
+    # IL FIX MAGICO: Trasforma subito le taglie vuote in UNICA alla radice
+    out.loc[out["Taglia"].eq(""), "Taglia"] = "UNICA"
+    
     out["Pezzi"] = pd.to_numeric(out["Pezzi"], errors="coerce").fillna(0).astype(int)
     if "Prezzo unitario" in out.columns:
         out["Prezzo unitario"] = pd.to_numeric(out["Prezzo unitario"], errors="coerce").fillna(0.0)
