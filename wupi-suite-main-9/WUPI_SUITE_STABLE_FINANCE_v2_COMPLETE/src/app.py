@@ -1743,7 +1743,7 @@ def main() -> None:
                 sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
                 substitute_modal(sku_color_options, proj_dir)
 
-      with c_pdf:
+        with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
             # Passiamo sel_school e sel_proj per creare l'intestazione!
             pdf_bytes = make_order_summary_pdf(piv_full, subs, file_stock, sel_school, sel_proj)
