@@ -1362,13 +1362,11 @@ def substitute_modal(sku_color_options, proj_dir: Path):
         sel_val = st.selectbox("Seleziona rapidamente (oppure usa le frecce):", options=sku_color_options, index=st.session_state.sub_idx)
         if sel_val != sku_color_options[st.session_state.sub_idx]:
             st.session_state.sub_idx = sku_color_options.index(sel_val)
-            st.session_state.show_sub_modal = True # Riappiccia la memoria per tenerlo aperto!
             st.rerun()
     with c_nav2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("❌ Chiudi", use_container_width=True):
-            st.session_state.show_sub_modal = False
-            st.rerun()
+            st.rerun() # Il rerun esplicito chiude la modale
 
     current_sel = sku_color_options[st.session_state.sub_idx]
     sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
@@ -1378,6 +1376,7 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     sub_data = subs.get(k, {})
     if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
         
+    # Memoria per pre-compilare l'ultimo fornitore/SKU usato
     last_forn = st.session_state.get("last_sub_forn", "ActionWear")
     last_sku = st.session_state.get("last_sub_sku", "")
     
@@ -1389,21 +1388,26 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     all_sups = base_sups + custom_sups + ["Altro"]
     idx_forn = all_sups.index(curr_forn) if curr_forn in all_sups else all_sups.index("Altro")
     
+    st.markdown(f"Stai modificando: **{sku}** — Variante **{color}**")
+    
+    # 1. PARTE DINAMICA (Fuori dal form) -> Si aggiorna all'istante
+    sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
+    if sel_forn == "Altro":
+        altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "")
+    else:
+        altro_forn = ""
+        
+    # 2. PARTE STATICA (Dentro il form) -> Cattura il tasto Invio
     with st.form(f"sub_form_{st.session_state.sub_idx}", clear_on_submit=False):
-        st.markdown(f"Stai modificando: **{sku}** — Variante **{color}**")
-        f1, f2 = st.columns(2)
-        with f1:
-            sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
-            altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "") if sel_forn == "Altro" else ""
-        with f2: 
-            new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
+        new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
             
         st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
         b1, b2, b3 = st.columns(3)
         
-        with b2: btn_save = st.form_submit_button("💾 Salva e Chiudi", type="primary", use_container_width=True)
-        with b1: btn_prev = st.form_submit_button("⬅️ Salva e Precedente", use_container_width=True)
-        with b3: btn_next = st.form_submit_button("Salva e Successivo ➡️", use_container_width=True)
+        # IL TRUCCO DEL TASTO INVIO: Streamlit assegna l'Invio al PRIMO bottone dichiarato nel codice!
+        btn_save = b2.form_submit_button("💾 Salva e Chiudi", type="primary", use_container_width=True)
+        btn_prev = b1.form_submit_button("⬅️ Salva e Precedente", use_container_width=True)
+        btn_next = b3.form_submit_button("Salva e Successivo ➡️", use_container_width=True)
         
         if btn_prev or btn_save or btn_next:
             final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
@@ -1423,14 +1427,10 @@ def substitute_modal(sku_color_options, proj_dir: Path):
             
             if btn_prev: 
                 st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
-                st.session_state.show_sub_modal = True # Riappiccia la memoria!
             elif btn_next: 
                 st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
-                st.session_state.show_sub_modal = True # Riappiccia la memoria!
             elif btn_save:
-                st.session_state.show_sub_modal = False
-            
-            st.rerun()
+                st.rerun() # Spegne la modale solo se premi "Salva e Chiudi" o Invio!
 
     current_sel = sku_color_options[st.session_state.sub_idx]
     sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
@@ -1839,26 +1839,18 @@ def main() -> None:
         st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano VERDI.")
         piv_full = pivot_report(df)
 
-        c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
+       c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
+            
         with c_search:
             q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
             
-        if "show_sub_modal" not in st.session_state: 
-            st.session_state.show_sub_modal = False
-            
         with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
+            # L'attivazione nativa della modale: niente variabili fantasma!
             if st.button("🔄 SKU Sostitutivo", use_container_width=True):
-                st.session_state.show_sub_modal = True
-
-        if st.session_state.show_sub_modal:
-            # TRUCCO MAGICO: Spegniamo la memoria subito! 
-            # Così se chiudi con la "X" nativa non riappare ai prossimi click.
-            st.session_state.show_sub_modal = False 
-            
-            pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
-            sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
-            substitute_modal(sku_color_options, proj_dir)
+                pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
+                sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
+                substitute_modal(sku_color_options, proj_dir)
 
         with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
