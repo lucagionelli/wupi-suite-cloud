@@ -599,15 +599,14 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict) -
                         order_qty = max(0, val_int - stock_qty)
                         row_order_tot += order_qty
                         
-                    if stock_qty > 0:
-                        if order_qty > 0:
-                            # Testo affiancato sulla stessa riga
-                            cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font> <font size='7' color='#86868b'>({stock_qty} mag)</font>", centered_style)
-                        else:
-                            # Azzurro se preso totalmente da magazzino
-                            cell_p = Paragraph(f"<font size='8' color='#1976d2'><b>{stock_qty} mag</b></font>", centered_style)
-                        row.append(cell_p)
-                     
+                        if stock_qty > 0:
+                            if order_qty > 0:
+                                cell_p = Paragraph(f"<font size='9'><b>{order_qty}</b></font> <font size='7' color='#86868b'>({stock_qty} mag)</font>", centered_style)
+                            else:
+                                cell_p = Paragraph(f"<font size='8' color='#1976d2'><b>{stock_qty} mag</b></font>", centered_style)
+                            row.append(cell_p)
+                        else: row.append(str(order_qty) if order_qty > 0 else "")
+                else: row.append("")
                     
             row.append(str(row_order_tot) if row_order_tot > 0 else "")
             data.append(row)
