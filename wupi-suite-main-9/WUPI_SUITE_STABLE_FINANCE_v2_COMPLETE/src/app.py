@@ -381,10 +381,10 @@ def cards_css() -> None:
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
 }
 
-/* Card confermata VERDE */
+/* Card confermata VERDE (Senza bordo pesante) */
 .wupi-card.confirmed {
   background-color: #e6f7e6;
-  border: 2px solid #4caf50;
+  border: 1px solid #ccebcc;
 }
 
 .card-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
@@ -392,7 +392,7 @@ def cards_css() -> None:
 .color-tot { font-weight:600; font-size:15px; color: #86868b; }
 .chips { display:flex; flex-wrap:wrap; gap:8px; }
 
-/* Taglie (pills) solide */
+/* Taglie (pills) base */
 .chip {
   display:inline-flex; gap:6px; align-items:center;
   padding: 4px 10px; border-radius: 8px;
@@ -400,6 +400,13 @@ def cards_css() -> None:
   font-size: 13px; font-weight: 500; color: #555;
 }
 .chip .q { font-weight:700; font-size:14px; color: #1d1d1f; }
+
+/* Pills BIANCHE quando la card è confermata (verde) */
+.wupi-card.confirmed .chip {
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
 .btn-row { display:flex; gap:12px; justify-content:center; margin-top:18px; }
 </style>
 """, unsafe_allow_html=True)
