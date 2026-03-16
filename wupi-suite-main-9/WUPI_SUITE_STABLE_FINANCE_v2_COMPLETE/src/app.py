@@ -1776,7 +1776,7 @@ def main() -> None:
         st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano VERDI.")
         piv_full = pivot_report(df)
 
-      c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
+        c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
         
         if "show_sub_modal" not in st.session_state: 
             st.session_state.show_sub_modal = False
