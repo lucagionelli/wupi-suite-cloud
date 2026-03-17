@@ -381,6 +381,7 @@ tr.warehouse td.tot {{ background-color: #cce0f5; }}
 
     html.append('</tbody></table></div>')
     st.markdown("".join(html), unsafe_allow_html=True)
+
 def cards_css() -> None:
     st.markdown("""
 <style>
@@ -494,7 +495,6 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
                             st.rerun()
     # ---- FINE CICLO DEI COLORI ----
 
-
     # QUESTI BOTTONI ORA SONO TORNATI RIGOROSAMENTE FUORI DAL CICLO!
     st.markdown('<div style="height:20px"></div>', unsafe_allow_html=True)
     _, r1, r2 = st.columns([6, 2, 2])
@@ -513,6 +513,7 @@ def render_color_cards(df: pd.DataFrame, sku: str, prod: str, confirmed: set[str
             save_state(proj_dir, sorted(list(confirmed)))
             st.session_state["confirmed"] = set(confirmed)
             st.rerun()
+
 def global_css() -> None:
     st.markdown("""
 <style>
@@ -666,113 +667,6 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
 # Labels
 # -------------------------
 @dataclass
-# --- NUOVE ETICHETTE PRODOTTO (3x7) ---
-@dataclass
-class GridLabelCfg:
-    w_mm: float = 63.5  # Larghezza standard etichetta
-    h_mm: float = 38.1  # Altezza standard etichetta
-    margin_x_mm: float = 9.75  # Margine laterale del foglio A4
-    margin_y_mm: float = 15.15 # Margine superiore del foglio A4
-    gap_x_mm: float = 0.0 # Spazio tra le colonne
-    gap_y_mm: float = 0.0 # Spazio tra le righe
-
-def get_exploded_items(df: pd.DataFrame) -> list[dict]:
-    items = []
-    for _, r in df.iterrows():
-        qty = int(pd.to_numeric(r.get("Pezzi", 0), errors="coerce"))
-        if qty <= 0: continue
-        
-        cls = clean_str(r.get("Classe", ""))
-        doc_ata = clean_str(r.get("Docente/ATA", ""))
-        is_doc = (clean_str(r.get("Nome Studente", "")) == "" and clean_str(r.get("Cognome Studente", "")) == "")
-        
-        lbl_classe = "Docenti / ATA" if (is_doc and doc_ata) else (cls if cls else "Docenti / ATA")
-            
-        item_data = {
-            "ordine": clean_str(r.get("N. Ordine", "")),
-            "prodotto": clean_str(r.get("Nome Prodotto", "")),
-            "colore": clean_str(r.get("Colore", "")),
-            "taglia": clean_str(r.get("Taglia", "")),
-            "classe": lbl_classe,
-            "studente": clean_str(r.get("Studente", "")), # <-- Aggiunto Studente!
-        }
-        # "Esplode" la quantità: se Pezzi = 3, crea 3 etichette!
-        for _ in range(qty):
-            items.append(item_data)
-    return items
-
-def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg) -> bytes:
-    from reportlab.pdfbase.pdfmetrics import stringWidth
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    page_w, page_h = A4
-    
-    def fit(text: str, max_w: float, font: str, size: float) -> str:
-        t = (text or "").strip()
-        if not t: return ""
-        if stringWidth(t, font, size) <= max_w: return t
-        s = t
-        while s and stringWidth(s + "…", font, size) > max_w: s = s[:-1]
-        return (s + "…") if s else "…"
-        
-    item_idx = 0
-    total_items = len(items)
-    
-    while item_idx < total_items:
-        for row in range(7):
-            for col in range(3):
-                if item_idx >= total_items: break
-                item = items[item_idx]
-                item_idx += 1
-                
-                # Calcolo esatto delle coordinate dell'etichetta
-                x_left = (cfg.margin_x_mm * mm) + col * ((cfg.w_mm + cfg.gap_x_mm) * mm)
-                y_top = page_h - (cfg.margin_y_mm * mm) - row * ((cfg.h_mm + cfg.gap_y_mm) * mm)
-                
-                pad_x = 4 * mm
-                box_w = cfg.w_mm * mm
-                max_text_w = box_w - (2 * pad_x)
-                
-                # 1. Scuola/WUPI (SX) e N. Ordine (DX) in alto
-                cur_y = y_top - 5 * mm
-                c.setFont("Helvetica-Bold", 9)
-                c.drawString(x_left + pad_x, cur_y, fit(school_name, max_text_w - 15*mm, "Helvetica-Bold", 9))
-                if item['ordine']:
-                    c.setFont("Helvetica", 9)
-                    c.drawRightString(x_left + box_w - pad_x, cur_y, fit(f"#{item['ordine']}", 15*mm, "Helvetica", 9))
-                
-                # 2. Nome Prodotto
-                cur_y -= 5.5 * mm
-                c.setFont("Helvetica-Bold", 10)
-                c.drawString(x_left + pad_x, cur_y, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 10))
-                
-                # 3. Colore
-                cur_y -= 5 * mm
-                c.setFont("Helvetica", 9)
-                c.drawString(x_left + pad_x, cur_y, fit(f"Colore {item['colore']}", max_text_w, "Helvetica", 9))
-                
-                # 4. Taglia
-                cur_y -= 4.5 * mm
-                c.setFont("Helvetica-Bold", 9)
-                c.drawString(x_left + pad_x, cur_y, fit(f"Taglia {item['taglia']}", max_text_w, "Helvetica-Bold", 9))
-                
-                # 5. Classe (Evidenziata)
-                cur_y -= 6.5 * mm
-                c.setFont("Helvetica-Bold", 11)
-                c.drawString(x_left + pad_x, cur_y, fit(item['classe'], max_text_w, "Helvetica-Bold", 11))
-                
-                # 6. Nome Studente
-                cur_y -= 4.5 * mm
-                c.setFont("Helvetica", 10)
-                c.drawString(x_left + pad_x, cur_y, fit(item['studente'], max_text_w, "Helvetica", 10))
-                
-        if item_idx < total_items:
-            c.showPage()
-            
-    c.save()
-    buf.seek(0)
-    return buf.getvalue()
-    
 class LabelCfg:
     w_mm: float = 152.0
     h_mm: float = 102.0
@@ -917,6 +811,105 @@ def make_labels_pdf(df: pd.DataFrame, logo_bytes: bytes | None, cfg: LabelCfg) -
                 c.setFont("Helvetica", row_pt)
                 y -= row_h
             c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
+
+# --- NUOVE ETICHETTE PRODOTTO (3x7) ---
+@dataclass
+class GridLabelCfg:
+    w_mm: float = 63.5  # Larghezza standard etichetta
+    h_mm: float = 38.1  # Altezza standard etichetta
+    margin_x_mm: float = 9.75  # Margine laterale del foglio A4
+    margin_y_mm: float = 15.15 # Margine superiore del foglio A4
+    gap_x_mm: float = 0.0 # Spazio tra le colonne
+    gap_y_mm: float = 0.0 # Spazio tra le righe
+
+def get_exploded_items(df: pd.DataFrame) -> list[dict]:
+    items = []
+    for _, r in df.iterrows():
+        qty = int(pd.to_numeric(r.get("Pezzi", 0), errors="coerce"))
+        if qty <= 0: continue
+        
+        cls = clean_str(r.get("Classe", ""))
+        doc_ata = clean_str(r.get("Docente/ATA", ""))
+        is_doc = (clean_str(r.get("Nome Studente", "")) == "" and clean_str(r.get("Cognome Studente", "")) == "")
+        
+        lbl_classe = "Docenti / ATA" if (is_doc and doc_ata) else (cls if cls else "Docenti / ATA")
+            
+        item_data = {
+            "ordine": clean_str(r.get("N. Ordine", "")),
+            "prodotto": clean_str(r.get("Nome Prodotto", "")),
+            "colore": clean_str(r.get("Colore", "")),
+            "taglia": clean_str(r.get("Taglia", "")),
+            "classe": lbl_classe,
+            "studente": clean_str(r.get("Studente", "")),
+        }
+        for _ in range(qty):
+            items.append(item_data)
+    return items
+
+def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg) -> bytes:
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    page_w, page_h = A4
+    
+    def fit(text: str, max_w: float, font: str, size: float) -> str:
+        t = (text or "").strip()
+        if not t: return ""
+        if stringWidth(t, font, size) <= max_w: return t
+        s = t
+        while s and stringWidth(s + "…", font, size) > max_w: s = s[:-1]
+        return (s + "…") if s else "…"
+        
+    item_idx = 0
+    total_items = len(items)
+    
+    while item_idx < total_items:
+        for row in range(7):
+            for col in range(3):
+                if item_idx >= total_items: break
+                item = items[item_idx]
+                item_idx += 1
+                
+                x_left = (cfg.margin_x_mm * mm) + col * ((cfg.w_mm + cfg.gap_x_mm) * mm)
+                y_top = page_h - (cfg.margin_y_mm * mm) - row * ((cfg.h_mm + cfg.gap_y_mm) * mm)
+                
+                pad_x = 4 * mm
+                box_w = cfg.w_mm * mm
+                max_text_w = box_w - (2 * pad_x)
+                
+                cur_y = y_top - 5 * mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_left + pad_x, cur_y, fit(school_name, max_text_w - 15*mm, "Helvetica-Bold", 9))
+                if item['ordine']:
+                    c.setFont("Helvetica", 9)
+                    c.drawRightString(x_left + box_w - pad_x, cur_y, fit(f"#{item['ordine']}", 15*mm, "Helvetica", 9))
+                
+                cur_y -= 5.5 * mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(x_left + pad_x, cur_y, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 10))
+                
+                cur_y -= 5 * mm
+                c.setFont("Helvetica", 9)
+                c.drawString(x_left + pad_x, cur_y, fit(f"Colore {item['colore']}", max_text_w, "Helvetica", 9))
+                
+                cur_y -= 4.5 * mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_left + pad_x, cur_y, fit(f"Taglia {item['taglia']}", max_text_w, "Helvetica-Bold", 9))
+                
+                cur_y -= 6.5 * mm
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(x_left + pad_x, cur_y, fit(item['classe'], max_text_w, "Helvetica-Bold", 11))
+                
+                cur_y -= 4.5 * mm
+                c.setFont("Helvetica", 10)
+                c.drawString(x_left + pad_x, cur_y, fit(item['studente'], max_text_w, "Helvetica", 10))
+                
+        if item_idx < total_items:
+            c.showPage()
+            
     c.save()
     buf.seek(0)
     return buf.getvalue()
@@ -1558,32 +1551,6 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     b1.button("⬅️ Salva e Prec.", use_container_width=True, on_click=nav_callback, args=("prev",))
     b2.button("💾 Salva e Chiudi", type="primary", use_container_width=True, on_click=nav_callback, args=("close",))
     b3.button("Salva e Succ. ➡️", use_container_width=True, on_click=nav_callback, args=("next",))
-        
-    if btn_prev or btn_save or btn_next:
-            final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
-            final_sku = new_sku.strip()
-            
-            st.session_state["last_sub_forn"] = final_forn
-            st.session_state["last_sub_sku"] = final_sku
-            
-            if final_forn and final_forn not in base_sups and final_forn not in custom_sups and final_forn != "Altro":
-                custom_sups.append(final_forn)
-                save_custom_suppliers(custom_sups)
-            
-            if final_sku: subs[k] = {"fornitore": final_forn, "sku": final_sku}
-            else: subs.pop(k, None)
-            
-            save_subs(proj_dir, subs)
-            
-            # Se premi Avanti o Indietro, naviga. Se premi Salva e Chiudi, spegne la modale!
-            if btn_prev: 
-                st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
-            elif btn_next: 
-                st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
-            elif btn_save:
-                st.session_state.show_sub_modal = False
-            
-            st.rerun()
 
 def page_bibbia(df_norm: pd.DataFrame) -> None:
     st.subheader("Bibbia maker (A3)")
@@ -1754,73 +1721,6 @@ def page_finanze(df_norm: pd.DataFrame, proj_dir: Path) -> None:
         for c in ["Prezzo vendita ex IVA", "Prezzo acquisto", "Importo ex IVA", "Margine"]: show[c] = show[c].map(_eur)
         st.dataframe(show, use_container_width=True, hide_index=True)
 
-@st.dialog("Gestione SKU Sostitutivi")
-def substitute_modal(sku_color_options, proj_dir: Path):
-    if "sub_idx" not in st.session_state: st.session_state.sub_idx = 0
-    if st.session_state.sub_idx >= len(sku_color_options): st.session_state.sub_idx = 0
-        
-    sel_val = st.selectbox("Seleziona rapidamente (oppure usa le frecce):", options=sku_color_options, index=st.session_state.sub_idx)
-    if sel_val != sku_color_options[st.session_state.sub_idx]:
-        st.session_state.sub_idx = sku_color_options.index(sel_val)
-        st.rerun()
-
-    current_sel = sku_color_options[st.session_state.sub_idx]
-    sku, color = [x.strip() for x in current_sel.split(" — ", 1)]
-    k = f"{clean_str(sku)}||{clean_str(color)}"
-    
-    subs = load_subs(proj_dir)
-    sub_data = subs.get(k, {})
-    if isinstance(sub_data, str): sub_data = {"fornitore": "Altro", "sku": sub_data}
-        
-    # Memoria intelligente
-    last_forn = st.session_state.get("last_sub_forn", "ActionWear")
-    last_sku = st.session_state.get("last_sub_sku", "")
-    
-    curr_forn = sub_data.get("fornitore", last_forn) if sub_data else last_forn
-    curr_sku = sub_data.get("sku", last_sku) if sub_data else last_sku
-
-    custom_sups = load_custom_suppliers()
-    base_sups = ["ActionWear", "Basic", "Roly", "Top-Tex", "Stanley/Stella", "Innova"]
-    all_sups = base_sups + custom_sups + ["Altro"]
-    idx_forn = all_sups.index(curr_forn) if curr_forn in all_sups else all_sups.index("Altro")
-    
-    with st.form(f"sub_form_{st.session_state.sub_idx}", clear_on_submit=False):
-        st.markdown(f"Stai modificando: **{sku}** — Variante **{color}**")
-        f1, f2 = st.columns(2)
-        with f1:
-            sel_forn = st.selectbox("Fornitore", options=all_sups, index=idx_forn)
-            altro_forn = st.text_input("Specifica nuovo fornitore:", value=curr_forn if curr_forn not in base_sups+custom_sups else "") if sel_forn == "Altro" else ""
-        with f2: 
-            new_sku = st.text_input("SKU Sostitutivo", value=curr_sku, placeholder="Es. DOG123")
-            
-        st.markdown("<hr style='margin:10px 0;'>", unsafe_allow_html=True)
-        b1, b2, b3 = st.columns(3)
-        with b1: btn_prev = st.form_submit_button("⬅️ Salva e Precedente", use_container_width=True)
-        with b2: btn_save = st.form_submit_button("💾 Salva (Invio)", type="primary", use_container_width=True)
-        with b3: btn_next = st.form_submit_button("Salva e Successivo ➡️", use_container_width=True)
-        
-        if btn_prev or btn_save or btn_next:
-            final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
-            final_sku = new_sku.strip()
-            
-            # Salvataggio in cache per la compilazione automatica al prossimo articolo
-            st.session_state["last_sub_forn"] = final_forn
-            st.session_state["last_sub_sku"] = final_sku
-            
-            if final_forn and final_forn not in base_sups and final_forn not in custom_sups and final_forn != "Altro":
-                custom_sups.append(final_forn)
-                save_custom_suppliers(custom_sups)
-            
-            if final_sku: subs[k] = {"fornitore": final_forn, "sku": final_sku}
-            else: subs.pop(k, None)
-            
-            save_subs(proj_dir, subs)
-            
-            if btn_prev: st.session_state.sub_idx = max(0, st.session_state.sub_idx - 1)
-            if btn_next: st.session_state.sub_idx = min(len(sku_color_options)-1, st.session_state.sub_idx + 1)
-            
-            st.rerun()
-            
 @st.cache_data
 def get_cached_dataframe(file_path_str: str, file_mtime: float) -> pd.DataFrame:
     """Carica e normalizza l'Excel solo se il file è stato modificato, velocizzando l'app del 1000%"""
@@ -1908,7 +1808,7 @@ def main() -> None:
             excel_path.unlink()
             st.rerun()
 
-   # Caricamento fulmineo con Cache
+    # Caricamento fulmineo con Cache
     mtime = os.path.getmtime(excel_path)
     df = get_cached_dataframe(str(excel_path), mtime)
 
@@ -1933,18 +1833,26 @@ def main() -> None:
         with c_search:
             q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
             
+        if "show_sub_modal" not in st.session_state: 
+            st.session_state.show_sub_modal = False
+            
         with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
             # L'attivazione nativa della modale: niente variabili fantasma!
             if st.button("🔄 SKU Sostitutivo", use_container_width=True):
-                pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
-                sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
-                substitute_modal(sku_color_options, proj_dir)
+                st.session_state.show_sub_modal = True
+
+        if st.session_state.show_sub_modal:
+            st.session_state.show_sub_modal = False
+            pairs_sub = piv_full[["SKU", "Colore"]].drop_duplicates().sort_values(["SKU", "Colore"], kind="stable")
+            sku_color_options = [f'{r["SKU"]} — {r["Colore"]}' for _, r in pairs_sub.iterrows()]
+            substitute_modal(sku_color_options, proj_dir)
 
         with c_pdf:
             st.markdown("<br>", unsafe_allow_html=True)
             pdf_bytes = make_order_summary_pdf(piv_full, subs, file_stock, sel_school, sel_proj)
             st.download_button("📄 PDF Ordine", data=pdf_bytes, file_name=f"ordine_{sel_school}_{sel_proj}.pdf", mime="application/pdf", use_container_width=True)
+            
         piv_view = piv_full
         if q:
             qq = str(q).strip()
