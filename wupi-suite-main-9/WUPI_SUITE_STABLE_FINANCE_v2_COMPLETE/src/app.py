@@ -890,7 +890,10 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg,
                 # 1. Logo (Alto a Sinistra)
                 if logo_img:
                     logo_h = 8 * mm
-                    c.drawImage(logo_img, x_left + pad_x, y_top - 4*mm - logo_h, height=logo_h, preserveAspectRatio=True, mask="auto")
+                    # IL FIX: Calcoliamo la larghezza esatta mantenendo le proporzioni
+                    img_w, img_h = logo_img.getSize()
+                    logo_w = logo_h * (img_w / img_h)
+                    c.drawImage(logo_img, x_left + pad_x, y_top - 4*mm - logo_h, width=logo_w, height=logo_h, preserveAspectRatio=True, mask="auto")
                 else:
                     c.setFont("Helvetica-Bold", 9)
                     c.drawString(x_left + pad_x, y_top - 8*mm, fit(school_name, 25*mm, "Helvetica-Bold", 9))
