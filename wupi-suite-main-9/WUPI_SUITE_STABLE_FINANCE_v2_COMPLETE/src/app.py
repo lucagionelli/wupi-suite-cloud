@@ -826,8 +826,13 @@ class GridLabelCfg:
     gap_y_mm: float = 0.0 # Spazio tra le righe
 
 def get_exploded_items(df: pd.DataFrame) -> list[dict]:
+    # Ordiniamo prima di tutto per: Prodotto -> Colore -> Taglia (in ordine logico S, M, L)
+    d_sort = df.copy()
+    d_sort["__r"] = d_sort["Taglia"].map(sort_size_key)
+    d_sort = d_sort.sort_values(["Nome Prodotto", "Colore", "__r"], kind="stable")
+    
     items = []
-    for _, r in df.iterrows():
+    for _, r in d_sort.iterrows():
         qty = int(pd.to_numeric(r.get("Pezzi", 0), errors="coerce"))
         if qty <= 0: continue
         
@@ -845,10 +850,10 @@ def get_exploded_items(df: pd.DataFrame) -> list[dict]:
             "classe": lbl_classe,
             "studente": clean_str(r.get("Studente", "")),
         }
+        # "Esplode" la quantità: se Pezzi = 3, crea 3 etichette!
         for _ in range(qty):
             items.append(item_data)
     return items
-
 def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg, logo_bytes: bytes | None = None) -> bytes:
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.lib.utils import ImageReader
