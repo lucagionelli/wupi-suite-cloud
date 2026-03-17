@@ -773,7 +773,7 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg)
     buf.seek(0)
     return buf.getvalue()
     
- class LabelCfg:
+class LabelCfg:
     w_mm: float = 152.0
     h_mm: float = 102.0
     margin_mm: float = 8.0
