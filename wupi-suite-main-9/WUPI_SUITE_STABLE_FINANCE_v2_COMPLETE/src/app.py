@@ -892,38 +892,39 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg,
                     logo_h = 8 * mm
                     c.drawImage(logo_img, x_left + pad_x, y_top - 4*mm - logo_h, height=logo_h, preserveAspectRatio=True, mask="auto")
                 else:
-                    c.setFont("Helvetica-Bold", 10)
-                    c.drawString(x_left + pad_x, y_top - 8*mm, fit(school_name, 25*mm, "Helvetica-Bold", 10))
+                    c.setFont("Helvetica-Bold", 9)
+                    c.drawString(x_left + pad_x, y_top - 8*mm, fit(school_name, 25*mm, "Helvetica-Bold", 9))
                 
-                # 2. Classe e Studente (Alto a Destra)
-                c.setFont("Helvetica-Bold", 11)
-                c.drawRightString(x_left + box_w - pad_x, y_top - 7.5 * mm, fit(item['classe'], max_text_w - 20*mm, "Helvetica-Bold", 11))
+                # 2. Classe (Alto a Destra) - Bold 8.5 pt (forzata in MAIUSCOLO)
+                c.setFont("Helvetica-Bold", 8.5)
+                c.drawRightString(x_left + box_w - pad_x, y_top - 7.5 * mm, fit(item['classe'].upper(), max_text_w - 20*mm, "Helvetica-Bold", 8.5))
                 
-                c.setFont("Helvetica", 10)
-                c.drawRightString(x_left + box_w - pad_x, y_top - 12.5 * mm, fit(item['studente'], max_text_w - 20*mm, "Helvetica", 10))
+                # 3. Nome Cognome (Alto a Destra, sotto classe) - Regular 9 pt
+                c.setFont("Helvetica", 9)
+                c.drawRightString(x_left + box_w - pad_x, y_top - 11.5 * mm, fit(item['studente'], max_text_w - 20*mm, "Helvetica", 9))
                 
-                # 3. Nome Prodotto (Centro Sinistra)
-                c.setFont("Helvetica-Bold", 11)
-                c.drawString(x_left + pad_x, y_top - 20.5 * mm, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 11))
+                # 4. Nome Prodotto (Centro Sinistra) - Bold 9 pt
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_left + pad_x, y_top - 19 * mm, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 9))
                 
-                # 4. Colore (Basso Sinistra)
-                cur_y = y_top - 27.5 * mm
-                c.setFont("Helvetica-Bold", 10)
-                c.drawString(x_left + pad_x, cur_y, "Colore")
-                w_col = stringWidth("Colore ", "Helvetica-Bold", 10)
-                c.setFont("Helvetica", 10)
-                c.drawString(x_left + pad_x + w_col, cur_y, fit(item['colore'], max_text_w - w_col, "Helvetica", 10))
+                # 5. Colore (Basso Sinistra)
+                cur_y = y_top - 26 * mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_left + pad_x, cur_y, "Colore: ")
+                w_col = stringWidth("Colore: ", "Helvetica-Bold", 9)
+                c.setFont("Helvetica", 9)
+                c.drawString(x_left + pad_x + w_col, cur_y, fit(item['colore'], max_text_w - w_col, "Helvetica", 9))
                 
-                # 5. Taglia (Basso Sinistra, sotto al colore) e N. Ordine (Basso Destra)
-                cur_y -= 5 * mm
-                c.setFont("Helvetica-Bold", 11)
-                c.drawString(x_left + pad_x, cur_y, "Taglia")
-                w_tag = stringWidth("Taglia ", "Helvetica-Bold", 11)
-                c.setFont("Helvetica", 11)
-                c.drawString(x_left + pad_x + w_tag, cur_y, fit(item['taglia'], max_text_w - w_tag - 15*mm, "Helvetica", 11))
+                # 6. Taglia (Basso Sinistra) e N. Ordine (Basso Destra)
+                cur_y -= 4.5 * mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_left + pad_x, cur_y, "Taglia: ")
+                w_tag = stringWidth("Taglia: ", "Helvetica-Bold", 9)
+                c.setFont("Helvetica", 9)
+                c.drawString(x_left + pad_x + w_tag, cur_y, fit(item['taglia'], max_text_w - w_tag - 15*mm, "Helvetica", 9))
                 
                 if item['ordine']:
-                    c.setFont("Helvetica", 10)
+                    c.setFont("Helvetica", 9)
                     c.drawRightString(x_left + box_w - pad_x, cur_y, f"#{item['ordine']}")
                 
         if item_idx < total_items:
