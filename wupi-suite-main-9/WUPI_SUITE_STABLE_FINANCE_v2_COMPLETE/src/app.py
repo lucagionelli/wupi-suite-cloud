@@ -1559,7 +1559,7 @@ def substitute_modal(sku_color_options, proj_dir: Path):
     b2.button("💾 Salva e Chiudi", type="primary", use_container_width=True, on_click=nav_callback, args=("close",))
     b3.button("Salva e Succ. ➡️", use_container_width=True, on_click=nav_callback, args=("next",))
         
-        if btn_prev or btn_save or btn_next:
+            if btn_prev or btn_save or btn_next:
             final_forn = altro_forn.strip() if sel_forn == "Altro" else sel_forn
             final_sku = new_sku.strip()
             
