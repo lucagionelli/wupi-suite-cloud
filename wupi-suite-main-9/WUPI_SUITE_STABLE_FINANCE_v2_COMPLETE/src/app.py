@@ -666,7 +666,114 @@ def make_order_summary_pdf(piv_df: pd.DataFrame, subs: dict, file_stock: dict, s
 # Labels
 # -------------------------
 @dataclass
-class LabelCfg:
+# --- NUOVE ETICHETTE PRODOTTO (3x7) ---
+@dataclass
+class GridLabelCfg:
+    w_mm: float = 63.5  # Larghezza standard etichetta
+    h_mm: float = 38.1  # Altezza standard etichetta
+    margin_x_mm: float = 9.75  # Margine laterale del foglio A4
+    margin_y_mm: float = 15.15 # Margine superiore del foglio A4
+    gap_x_mm: float = 0.0 # Spazio tra le colonne
+    gap_y_mm: float = 0.0 # Spazio tra le righe
+
+def get_exploded_items(df: pd.DataFrame) -> list[dict]:
+    items = []
+    for _, r in df.iterrows():
+        qty = int(pd.to_numeric(r.get("Pezzi", 0), errors="coerce"))
+        if qty <= 0: continue
+        
+        cls = clean_str(r.get("Classe", ""))
+        doc_ata = clean_str(r.get("Docente/ATA", ""))
+        is_doc = (clean_str(r.get("Nome Studente", "")) == "" and clean_str(r.get("Cognome Studente", "")) == "")
+        
+        lbl_classe = "Docenti / ATA" if (is_doc and doc_ata) else (cls if cls else "Docenti / ATA")
+            
+        item_data = {
+            "ordine": clean_str(r.get("N. Ordine", "")),
+            "prodotto": clean_str(r.get("Nome Prodotto", "")),
+            "colore": clean_str(r.get("Colore", "")),
+            "taglia": clean_str(r.get("Taglia", "")),
+            "classe": lbl_classe,
+            "studente": clean_str(r.get("Studente", "")), # <-- Aggiunto Studente!
+        }
+        # "Esplode" la quantità: se Pezzi = 3, crea 3 etichette!
+        for _ in range(qty):
+            items.append(item_data)
+    return items
+
+def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg) -> bytes:
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    page_w, page_h = A4
+    
+    def fit(text: str, max_w: float, font: str, size: float) -> str:
+        t = (text or "").strip()
+        if not t: return ""
+        if stringWidth(t, font, size) <= max_w: return t
+        s = t
+        while s and stringWidth(s + "…", font, size) > max_w: s = s[:-1]
+        return (s + "…") if s else "…"
+        
+    item_idx = 0
+    total_items = len(items)
+    
+    while item_idx < total_items:
+        for row in range(7):
+            for col in range(3):
+                if item_idx >= total_items: break
+                item = items[item_idx]
+                item_idx += 1
+                
+                # Calcolo esatto delle coordinate dell'etichetta
+                x_left = (cfg.margin_x_mm * mm) + col * ((cfg.w_mm + cfg.gap_x_mm) * mm)
+                y_top = page_h - (cfg.margin_y_mm * mm) - row * ((cfg.h_mm + cfg.gap_y_mm) * mm)
+                
+                pad_x = 4 * mm
+                box_w = cfg.w_mm * mm
+                max_text_w = box_w - (2 * pad_x)
+                
+                # 1. Scuola/WUPI (SX) e N. Ordine (DX) in alto
+                cur_y = y_top - 5 * mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_left + pad_x, cur_y, fit(school_name, max_text_w - 15*mm, "Helvetica-Bold", 9))
+                if item['ordine']:
+                    c.setFont("Helvetica", 9)
+                    c.drawRightString(x_left + box_w - pad_x, cur_y, fit(f"#{item['ordine']}", 15*mm, "Helvetica", 9))
+                
+                # 2. Nome Prodotto
+                cur_y -= 5.5 * mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(x_left + pad_x, cur_y, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 10))
+                
+                # 3. Colore
+                cur_y -= 5 * mm
+                c.setFont("Helvetica", 9)
+                c.drawString(x_left + pad_x, cur_y, fit(f"Colore {item['colore']}", max_text_w, "Helvetica", 9))
+                
+                # 4. Taglia
+                cur_y -= 4.5 * mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_left + pad_x, cur_y, fit(f"Taglia {item['taglia']}", max_text_w, "Helvetica-Bold", 9))
+                
+                # 5. Classe (Evidenziata)
+                cur_y -= 6.5 * mm
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(x_left + pad_x, cur_y, fit(item['classe'], max_text_w, "Helvetica-Bold", 11))
+                
+                # 6. Nome Studente
+                cur_y -= 4.5 * mm
+                c.setFont("Helvetica", 10)
+                c.drawString(x_left + pad_x, cur_y, fit(item['studente'], max_text_w, "Helvetica", 10))
+                
+        if item_idx < total_items:
+            c.showPage()
+            
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
+    
+    class LabelCfg:
     w_mm: float = 152.0
     h_mm: float = 102.0
     margin_mm: float = 8.0
@@ -1876,28 +1983,56 @@ def main() -> None:
         render_color_cards(df, sku, prod, confirmed, proj_dir)
 
     with tabs[1]:
-        st.subheader("Etichette (152×102 mm orizzontale)")
-        st.caption("Se Nome/Cognome studente vuoti → Docenti / ATA come classe e nominativo da Docente/ATA.")
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            st.write("Impostazioni rapide")
-            w = st.number_input("Larghezza (mm)", value=152.0, step=1.0)
-            h = st.number_input("Altezza (mm)", value=102.0, step=1.0)
-            with st.expander("Opzioni avanzate (margini e font)", expanded=False):
-                m = st.number_input("Margine (mm)", value=8.0, step=0.5)
-                logo_w = st.number_input("Larghezza logo (mm)", value=28.0, step=1.0)
-                title_pt = st.number_input("Font classe (pt)", value=18.0, step=0.5)
-                header_pt = st.number_input("Font intestazioni (pt)", value=9.0, step=0.5)
-                row_pt = st.number_input("Font righe (pt)", value=9.0, step=0.5)
-                row_h = st.number_input("Altezza riga (mm)", value=4.2, step=0.2)
-                strip_modello = st.checkbox('Elimina "Modello" (es: | Modello Joker → | Joker)', value=False)
-        with col2: logo_up = st.file_uploader("Logo (PNG) opzionale", type=["png"])
-        logo_bytes = logo_up.getvalue() if logo_up else (LOGO_PATH.read_bytes() if LOGO_PATH.exists() else None)
+        st.subheader("Generatore Etichette")
+        
+        # Creiamo due sotto-schede per gestire i due formati
+        et_tab1, et_tab2 = st.tabs(["📦 Etichette Buste (152x102)", "👕 Etichette Prodotti (3x7)"])
+        
+        with et_tab1:
+            st.caption("Etichette grandi per la busta dell'ordine (1 ordine = 1 etichetta).")
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                w = st.number_input("Larghezza (mm)", value=152.0, step=1.0)
+                h = st.number_input("Altezza (mm)", value=102.0, step=1.0)
+                with st.expander("Opzioni avanzate (margini e font)", expanded=False):
+                    m = st.number_input("Margine (mm)", value=8.0, step=0.5)
+                    logo_w = st.number_input("Larghezza logo (mm)", value=28.0, step=1.0)
+                    title_pt = st.number_input("Font classe (pt)", value=18.0, step=0.5)
+                    header_pt = st.number_input("Font intestazioni (pt)", value=9.0, step=0.5)
+                    row_pt = st.number_input("Font righe (pt)", value=9.0, step=0.5)
+                    row_h = st.number_input("Altezza riga (mm)", value=4.2, step=0.2)
+                    strip_modello = st.checkbox('Elimina "Modello" (es: | Modello Joker → | Joker)', value=False)
+            with col2: logo_up = st.file_uploader("Logo (PNG) opzionale", type=["png"])
+            logo_bytes = logo_up.getvalue() if logo_up else (LOGO_PATH.read_bytes() if LOGO_PATH.exists() else None)
 
-        cfg = LabelCfg(w_mm=float(w), h_mm=float(h), margin_mm=float(m), logo_w_mm=float(logo_w), title_pt=float(title_pt), header_pt=float(header_pt), row_pt=float(row_pt), row_h_mm=float(row_h), strip_modello=bool(strip_modello))
-        if st.button("Genera PDF etichette", type="primary"):
-            pdf = make_labels_pdf(df, logo_bytes, cfg)
-            st.download_button("⬇️ Scarica PDF", data=pdf, file_name=f"etichette_{sel_school}.pdf", mime="application/pdf")
+            cfg_lbl = LabelCfg(w_mm=float(w), h_mm=float(h), margin_mm=float(m), logo_w_mm=float(logo_w), title_pt=float(title_pt), header_pt=float(header_pt), row_pt=float(row_pt), row_h_mm=float(row_h), strip_modello=bool(strip_modello))
+            if st.button("Genera PDF Buste (152x102)", type="primary"):
+                pdf = make_labels_pdf(df, logo_bytes, cfg_lbl)
+                st.download_button("⬇️ Scarica PDF Buste", data=pdf, file_name=f"etichette_buste_{sel_school}.pdf", mime="application/pdf")
+
+        with et_tab2:
+            st.caption("Etichette piccole da incollare sui singoli capi (1 capo fisico = 1 etichetta). Griglia 3x7 su foglio A4.")
+            
+            # Conta quanti capi fisici ci sono in totale
+            exploded_items = get_exploded_items(df)
+            st.success(f"Trovati **{len(exploded_items)} capi fisici** da etichettare ({len(exploded_items)//21 + 1} fogli A4 necessari).")
+            
+            with st.expander("Regolazione Millimetrica Fogli Fustellati", expanded=False):
+                c_w, c_h = st.columns(2)
+                with c_w:
+                    grid_w = st.number_input("Larghezza Etichetta (mm)", value=63.5, step=0.1)
+                    grid_mx = st.number_input("Margine Sinistro Foglio (mm)", value=9.75, step=0.1)
+                    grid_gx = st.number_input("Spazio Orizzontale tra etichette (mm)", value=0.0, step=0.1)
+                with c_h:
+                    grid_h = st.number_input("Altezza Etichetta (mm)", value=38.1, step=0.1)
+                    grid_my = st.number_input("Margine Superiore Foglio (mm)", value=15.15, step=0.1)
+                    grid_gy = st.number_input("Spazio Verticale tra etichette (mm)", value=0.0, step=0.1)
+            
+            cfg_grid = GridLabelCfg(w_mm=float(grid_w), h_mm=float(grid_h), margin_x_mm=float(grid_mx), margin_y_mm=float(grid_my), gap_x_mm=float(grid_gx), gap_y_mm=float(grid_gy))
+            
+            if st.button("Genera PDF Prodotti (3x7)", type="primary"):
+                pdf_grid = make_grid_labels_pdf(exploded_items, sel_school, cfg_grid)
+                st.download_button("⬇️ Scarica PDF Fogli A4 (3x7)", data=pdf_grid, file_name=f"etichette_capi_{sel_school}.pdf", mime="application/pdf")
 
     with tabs[2]: page_pending(df)
     with tabs[3]: page_bibbia(df)
