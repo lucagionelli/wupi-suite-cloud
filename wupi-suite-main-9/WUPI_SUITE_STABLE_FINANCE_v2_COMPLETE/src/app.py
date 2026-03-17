@@ -849,11 +849,17 @@ def get_exploded_items(df: pd.DataFrame) -> list[dict]:
             items.append(item_data)
     return items
 
-def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg) -> bytes:
+def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg, logo_bytes: bytes | None = None) -> bytes:
     from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.lib.utils import ImageReader
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     page_w, page_h = A4
+    
+    logo_img = None
+    if logo_bytes:
+        try: logo_img = ImageReader(io.BytesIO(logo_bytes))
+        except Exception: logo_img = None
     
     def fit(text: str, max_w: float, font: str, size: float) -> str:
         t = (text or "").strip()
@@ -873,39 +879,52 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg)
                 item = items[item_idx]
                 item_idx += 1
                 
+                # Calcolo esatto delle coordinate dell'etichetta
                 x_left = (cfg.margin_x_mm * mm) + col * ((cfg.w_mm + cfg.gap_x_mm) * mm)
                 y_top = page_h - (cfg.margin_y_mm * mm) - row * ((cfg.h_mm + cfg.gap_y_mm) * mm)
                 
-                pad_x = 4 * mm
+                pad_x = 4.5 * mm
                 box_w = cfg.w_mm * mm
                 max_text_w = box_w - (2 * pad_x)
                 
-                cur_y = y_top - 5 * mm
-                c.setFont("Helvetica-Bold", 9)
-                c.drawString(x_left + pad_x, cur_y, fit(school_name, max_text_w - 15*mm, "Helvetica-Bold", 9))
-                if item['ordine']:
-                    c.setFont("Helvetica", 9)
-                    c.drawRightString(x_left + box_w - pad_x, cur_y, fit(f"#{item['ordine']}", 15*mm, "Helvetica", 9))
+                # 1. Logo (Alto a Sinistra)
+                if logo_img:
+                    logo_h = 8 * mm
+                    c.drawImage(logo_img, x_left + pad_x, y_top - 4*mm - logo_h, height=logo_h, preserveAspectRatio=True, mask="auto")
+                else:
+                    c.setFont("Helvetica-Bold", 10)
+                    c.drawString(x_left + pad_x, y_top - 8*mm, fit(school_name, 25*mm, "Helvetica-Bold", 10))
                 
-                cur_y -= 5.5 * mm
-                c.setFont("Helvetica-Bold", 10)
-                c.drawString(x_left + pad_x, cur_y, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 10))
-                
-                cur_y -= 5 * mm
-                c.setFont("Helvetica", 9)
-                c.drawString(x_left + pad_x, cur_y, fit(f"Colore {item['colore']}", max_text_w, "Helvetica", 9))
-                
-                cur_y -= 4.5 * mm
-                c.setFont("Helvetica-Bold", 9)
-                c.drawString(x_left + pad_x, cur_y, fit(f"Taglia {item['taglia']}", max_text_w, "Helvetica-Bold", 9))
-                
-                cur_y -= 6.5 * mm
+                # 2. Classe e Studente (Alto a Destra)
                 c.setFont("Helvetica-Bold", 11)
-                c.drawString(x_left + pad_x, cur_y, fit(item['classe'], max_text_w, "Helvetica-Bold", 11))
+                c.drawRightString(x_left + box_w - pad_x, y_top - 7.5 * mm, fit(item['classe'], max_text_w - 20*mm, "Helvetica-Bold", 11))
                 
-                cur_y -= 4.5 * mm
                 c.setFont("Helvetica", 10)
-                c.drawString(x_left + pad_x, cur_y, fit(item['studente'], max_text_w, "Helvetica", 10))
+                c.drawRightString(x_left + box_w - pad_x, y_top - 12.5 * mm, fit(item['studente'], max_text_w - 20*mm, "Helvetica", 10))
+                
+                # 3. Nome Prodotto (Centro Sinistra)
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(x_left + pad_x, y_top - 20.5 * mm, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 11))
+                
+                # 4. Colore (Basso Sinistra)
+                cur_y = y_top - 27.5 * mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawString(x_left + pad_x, cur_y, "Colore")
+                w_col = stringWidth("Colore ", "Helvetica-Bold", 10)
+                c.setFont("Helvetica", 10)
+                c.drawString(x_left + pad_x + w_col, cur_y, fit(item['colore'], max_text_w - w_col, "Helvetica", 10))
+                
+                # 5. Taglia (Basso Sinistra, sotto al colore) e N. Ordine (Basso Destra)
+                cur_y -= 5 * mm
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(x_left + pad_x, cur_y, "Taglia")
+                w_tag = stringWidth("Taglia ", "Helvetica-Bold", 11)
+                c.setFont("Helvetica", 11)
+                c.drawString(x_left + pad_x + w_tag, cur_y, fit(item['taglia'], max_text_w - w_tag - 15*mm, "Helvetica", 11))
+                
+                if item['ordine']:
+                    c.setFont("Helvetica", 10)
+                    c.drawRightString(x_left + box_w - pad_x, cur_y, f"#{item['ordine']}")
                 
         if item_idx < total_items:
             c.showPage()
@@ -1939,7 +1958,8 @@ def main() -> None:
             cfg_grid = GridLabelCfg(w_mm=float(grid_w), h_mm=float(grid_h), margin_x_mm=float(grid_mx), margin_y_mm=float(grid_my), gap_x_mm=float(grid_gx), gap_y_mm=float(grid_gy))
             
             if st.button("Genera PDF Prodotti (3x7)", type="primary"):
-                pdf_grid = make_grid_labels_pdf(exploded_items, sel_school, cfg_grid)
+                # Passiamo il logo_bytes (già caricato in et_tab1) alla funzione!
+                pdf_grid = make_grid_labels_pdf(exploded_items, sel_school, cfg_grid, logo_bytes)
                 st.download_button("⬇️ Scarica PDF Fogli A4 (3x7)", data=pdf_grid, file_name=f"etichette_capi_{sel_school}.pdf", mime="application/pdf")
 
     with tabs[2]: page_pending(df)
