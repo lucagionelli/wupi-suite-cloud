@@ -860,9 +860,26 @@ def get_exploded_items(df: pd.DataFrame) -> list[dict]:
         for _ in range(qty):
             items.append(item_data)
     return items
+# Mappa dei codici HEX per i pallini colorati
+COLOR_HEX_MAP = {
+    "arancione": "#FF8C00", "bianco": "#FFFFFF", "nero": "#1D1D1B",
+    "navy": "#1B213A", "royal": "#2D5DA1", "burgundy": "#572C3A",
+    "cardinal": "#7B293C", "chocolate": "#3C2825", "dark_caramel": "#8F6744",
+    "dark_grey": "#4F4F51", "dusty_pink": "#D2A4A0", "dusty_green": "#7A8B80",
+    "military": "#4E5445", "forest": "#264835", "gold": "#F0B622",
+    "grey_heather": "#A8A9AD", "ink_blue": "#212B46", "irish_green": "#208C59",
+    "salvia": "#84959E", "mastic": "#D7D2C7", "mineral_blue": "#6A8C9E",
+    "mustard": "#DCA73A", "off_white": "#EFEBE1", "olive": "#5E6445",
+    "peacock_ink_blue": "#284E5C", "petroleum": "#27484F", "rosa": "#F3BAC7",
+    "purple": "#4B3252", "red": "#BC2C3D", "rust": "#9C4634",
+    "urban_slate": "#58626A", "light_grey": "#D1D3D4", "sand_almond_cream": "#E8D8C4"
+}
+
 def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg, logo_bytes: bytes | None = None) -> bytes:
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.lib.utils import ImageReader
+    from reportlab.lib import colors
+    
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     page_w, page_h = A4
@@ -901,7 +918,6 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg,
                 # 1. Logo (Alto a Sinistra)
                 if logo_img:
                     logo_h = 8 * mm
-                    # IL FIX: Calcoliamo la larghezza esatta mantenendo le proporzioni
                     img_w, img_h = logo_img.getSize()
                     logo_w = logo_h * (img_w / img_h)
                     c.drawImage(logo_img, x_left + pad_x, y_top - 4*mm - logo_h, width=logo_w, height=logo_h, preserveAspectRatio=True, mask="auto")
@@ -909,15 +925,15 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg,
                     c.setFont("Helvetica-Bold", 9)
                     c.drawString(x_left + pad_x, y_top - 8*mm, fit(school_name, 25*mm, "Helvetica-Bold", 9))
                 
-                # 2. Classe (Alto a Destra) - Bold 8.5 pt (forzata in MAIUSCOLO)
+                # 2. Classe (Alto a Destra)
                 c.setFont("Helvetica-Bold", 8.5)
                 c.drawRightString(x_left + box_w - pad_x, y_top - 7.5 * mm, fit(item['classe'].upper(), max_text_w - 20*mm, "Helvetica-Bold", 8.5))
                 
-                # 3. Nome Cognome (Alto a Destra, sotto classe) - Regular 9 pt
+                # 3. Nome Cognome (Alto a Destra)
                 c.setFont("Helvetica", 9)
                 c.drawRightString(x_left + box_w - pad_x, y_top - 11.5 * mm, fit(item['studente'], max_text_w - 20*mm, "Helvetica", 9))
                 
-                # 4. Nome Prodotto (Centro Sinistra) - Bold 9 pt
+                # 4. Nome Prodotto (Centro Sinistra)
                 c.setFont("Helvetica-Bold", 9)
                 c.drawString(x_left + pad_x, y_top - 19 * mm, fit(item['prodotto'], max_text_w, "Helvetica-Bold", 9))
                 
@@ -940,6 +956,23 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg,
                 if item['ordine']:
                     c.setFont("Helvetica", 9)
                     c.drawRightString(x_left + box_w - pad_x, cur_y, f"#{item['ordine']}")
+
+                # 7. Tondino Colore (Basso Destra, sopra l'ordine)
+                canon_col = color_to_canon_key(item['colore'])
+                hex_val = COLOR_HEX_MAP.get(canon_col)
+                if hex_val:
+                    r = 3.5 * mm # Raggio del tondino
+                    circle_x = x_left + box_w - pad_x - r
+                    circle_y = cur_y + 6 * mm
+                    
+                    c.saveState()
+                    c.setFillColor(colors.HexColor(hex_val))
+                    if hex_val.upper() in ["#FFFFFF", "#EFEBE1"]:
+                        c.setStrokeColor(colors.HexColor("#CCCCCC"))
+                        c.circle(circle_x, circle_y, r, stroke=1, fill=1)
+                    else:
+                        c.circle(circle_x, circle_y, r, stroke=0, fill=1)
+                    c.restoreState()
                 
         if item_idx < total_items:
             c.showPage()
