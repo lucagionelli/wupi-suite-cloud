@@ -841,10 +841,16 @@ def get_exploded_items(df: pd.DataFrame) -> list[dict]:
         is_doc = (clean_str(r.get("Nome Studente", "")) == "" and clean_str(r.get("Cognome Studente", "")) == "")
         
         lbl_classe = "Docenti / ATA" if (is_doc and doc_ata) else (cls if cls else "Docenti / ATA")
+        
+        # LOGICA INCISIONE: Se c'è, lo affianca al nome prodotto
+        nome_prod = clean_str(r.get("Nome Prodotto", ""))
+        incisione = clean_str(r.get("Nome incisione", ""))
+        if incisione:
+            nome_prod = f'{nome_prod} ("{incisione}")'
             
         item_data = {
             "ordine": clean_str(r.get("N. Ordine", "")),
-            "prodotto": clean_str(r.get("Nome Prodotto", "")),
+            "prodotto": nome_prod,
             "colore": clean_str(r.get("Colore", "")),
             "taglia": clean_str(r.get("Taglia", "")),
             "classe": lbl_classe,
