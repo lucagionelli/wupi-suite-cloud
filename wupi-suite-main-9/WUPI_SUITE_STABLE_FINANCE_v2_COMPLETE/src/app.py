@@ -1991,7 +1991,6 @@ def main() -> None:
             excel_path.unlink()
             st.rerun()
 
-    # Caricamento fulmineo con Cache
     mtime = os.path.getmtime(excel_path)
     df = get_cached_dataframe(str(excel_path), mtime)
 
@@ -2008,11 +2007,10 @@ def main() -> None:
     
     with tabs[0]:
         st.subheader("Pivot ordine fornitore")
-        st.caption("0 nascosti, Totale fisso a destra (bold). Le righe confermate diventano VERDI.")
+        st.caption("Le righe confermate diventano VERDI, quelle caricate da magazzino AZZURRE.")
         piv_full = pivot_report(df)
 
         c_search, c_sub, c_pdf = st.columns([4, 1.5, 1.5])
-            
         with c_search:
             q = st.text_input("🔍 Cerca (SKU / Prodotto / Colore)", key="pivot_search")
             
@@ -2021,7 +2019,6 @@ def main() -> None:
             
         with c_sub:
             st.markdown("<br>", unsafe_allow_html=True)
-            # L'attivazione nativa della modale: niente variabili fantasma!
             if st.button("🔄 SKU Sostitutivo", use_container_width=True):
                 st.session_state.show_sub_modal = True
 
@@ -2049,12 +2046,7 @@ def main() -> None:
         
         if "pair_idx" not in st.session_state: st.session_state["pair_idx"] = 0
         if "pair_widget_ver" not in st.session_state: st.session_state["pair_widget_ver"] = 0
-        if st.session_state.get("advance_next_sku", False) and len(options) > 0:
-            st.session_state["advance_next_sku"] = False
-            if st.session_state["pair_idx"] < len(options) - 1:
-                st.session_state["pair_idx"] += 1
-                st.session_state["pair_widget_ver"] += 1
-
+        
         a, b, c = st.columns([1, 8, 1], gap='small')
         with a:
             if st.button("‹", key="prev_pair", use_container_width=True):
@@ -2068,7 +2060,6 @@ def main() -> None:
                 st.session_state["pair_widget_ver"] += 1; st.rerun()
 
         if len(options) > 0 and sel in options: st.session_state["pair_idx"] = options.index(sel)
-
         sku = sel.split(" — ", 1)[0].strip()
         prod = sel.split(" — ", 1)[1].strip()
         render_color_cards(df, sku, prod, confirmed, proj_dir)
@@ -2076,74 +2067,51 @@ def main() -> None:
     with tabs[1]:
         st.subheader("Generatore Etichette")
         
-        # Aggiungiamo la terza tab per la logistica
+        # FIX: Carichiamo il logo qui, fuori dai tab interni, così è sempre definito
+        with st.expander("Logo per Etichette", expanded=False):
+            logo_up = st.file_uploader("Carica Logo (PNG)", type=["png"], key="labels_logo_uploader")
+        
+        # Variabile logo_bytes disponibile per tutti i tab interni
+        logo_bytes = logo_up.getvalue() if logo_up else (LOGO_PATH.read_bytes() if LOGO_PATH.exists() else None)
+        
         et_tab1, et_tab2, et_tab3 = st.tabs(["📦 Buste (152x102)", "👕 Prodotti (3x7)", "🚚 Logistica (L7163)"])
         
-        # ... (et_tab1 e et_tab2 rimangono uguali a prima) ...
-
-        with et_tab3:
-            st.caption("Etichette grandi L7163 (99x38mm). Layout avanzato con griglia interna per smistamento veloce.")
-            
-            exploded_items = get_exploded_items(df)
-            st.info(f"Verranno generate **{len(exploded_items)} etichette** ({len(exploded_items)//14 + 1} fogli A4 necessari).")
-            
-            # Parametri di controllo opzionali
-            with st.expander("Regolazione Millimetrica L7163", expanded=False):
-                c1, c2 = st.columns(2)
-                l_mx = c1.number_input("Margine Sinistro (mm)", value=4.65, step=0.1, key="l7163_mx")
-                l_my = c2.number_input("Margine Superiore (mm)", value=15.1, step=0.1, key="l7163_my")
-            
-            cfg_log = LogisticaL7163Cfg(margin_x_mm=float(l_mx), margin_y_mm=float(l_my))
-            
-            if st.button("Genera PDF Logistica (L7163)", type="primary"):
-                # Recuperiamo il logo_bytes (già definito sopra nella tab1)
-                pdf_log = make_logistica_l7163_pdf(exploded_items, sel_school, cfg_log, logo_bytes)
-                st.download_button("⬇️ Scarica PDF Logistica L7163", data=pdf_log, file_name=f"logistica_{sel_school}.pdf", mime="application/pdf")
-
-        # Configurazione comune ai formati su foglio A4
         exploded_items = get_exploded_items(df)
 
+        with et_tab1:
+            st.caption("Etichette grandi per la busta dell'ordine.")
+            w = st.number_input("Larghezza (mm)", value=152.0, step=1.0, key="eb_w")
+            h = st.number_input("Altezza (mm)", value=102.0, step=1.0, key="eb_h")
+            cfg_lbl = LabelCfg(w_mm=float(w), h_mm=float(h))
+            if st.button("Genera PDF Buste", type="primary"):
+                pdf = make_labels_pdf(df, logo_bytes, cfg_lbl)
+                st.download_button("⬇️ Scarica PDF Buste", data=pdf, file_name=f"etichette_buste_{sel_school}.pdf", mime="application/pdf")
+
         with et_tab2:
-            st.caption("Etichette classiche (1 capo fisico = 1 etichetta). Griglia 3x7 su foglio A4 (es. L7160).")
-            st.success(f"Trovati **{len(exploded_items)} capi fisici** ({len(exploded_items)//21 + 1} fogli A4 necessari).")
-            
-            with st.expander("Regolazione Millimetrica Fogli Fustellati", expanded=False):
+            st.caption("Griglia 3x7 standard (es. L7160). 1 etichetta per ogni capo fisico.")
+            st.info(f"Trovati **{len(exploded_items)} capi fisici**.")
+            with st.expander("Regolazione Millimetrica", expanded=False):
                 c_w, c_h = st.columns(2)
-                with c_w:
-                    grid_w = st.number_input("Larghezza (mm)", value=63.5, step=0.1, key="gw2")
-                    grid_mx = st.number_input("Margine Sx (mm)", value=9.75, step=0.1, key="gmx2")
-                    grid_gx = st.number_input("Gap Orizz. (mm)", value=0.0, step=0.1, key="ggx2")
-                with c_h:
-                    grid_h = st.number_input("Altezza (mm)", value=38.1, step=0.1, key="gh2")
-                    grid_my = st.number_input("Margine Su (mm)", value=15.15, step=0.1, key="gmy2")
-                    grid_gy = st.number_input("Gap Vert. (mm)", value=0.0, step=0.1, key="ggy2")
+                g_mx = c_w.number_input("Margine Sx (mm)", value=9.75, step=0.1, key="gmx_2")
+                g_my = c_h.number_input("Margine Su (mm)", value=15.15, step=0.1, key="gmy_2")
             
-            cfg_grid_3x7 = GridLabelCfg(w_mm=float(grid_w), h_mm=float(grid_h), margin_x_mm=float(grid_mx), margin_y_mm=float(grid_my), gap_x_mm=float(grid_gx), gap_y_mm=float(grid_gy))
-            
-            if st.button("Genera PDF Standard (3x7)", type="primary"):
-                pdf_grid = make_grid_labels_pdf(exploded_items, sel_school, cfg_grid_3x7, logo_bytes)
-                st.download_button("⬇️ Scarica PDF Fogli A4 (3x7)", data=pdf_grid, file_name=f"etichette_standard_{sel_school}.pdf", mime="application/pdf")
+            cfg_3x7 = GridLabelCfg(margin_x_mm=float(g_mx), margin_y_mm=float(g_my))
+            if st.button("Genera PDF Standard 3x7", type="primary"):
+                pdf_grid = make_grid_labels_pdf(exploded_items, sel_school, cfg_3x7, logo_bytes)
+                st.download_button("⬇️ Scarica PDF 3x7", data=pdf_grid, file_name=f"etichette_3x7_{sel_school}.pdf", mime="application/pdf")
 
         with et_tab3:
-            st.caption("Nuovo layout Premium a blocchi. Griglia 2x7 su foglio A4 (Standard L7163 - 99.1x38.1 mm).")
-            st.success(f"Trovati **{len(exploded_items)} capi fisici** ({len(exploded_items)//14 + 1} fogli A4 necessari).")
+            st.caption("Layout Premium L7163 (99x38mm). Griglia 2x7.")
+            st.info(f"Verranno generate **{len(exploded_items)} etichette**.")
+            with st.expander("Regolazione Millimetrica", expanded=False):
+                c1, c2 = st.columns(2)
+                l_mx = c1.number_input("Margine Sinistro (mm)", value=4.65, step=0.1, key="l7163_mx_f")
+                l_my = c2.number_input("Margine Superiore (mm)", value=15.1, step=0.1, key="l7163_my_f")
             
-            with st.expander("Regolazione Millimetrica Fogli Fustellati", expanded=False):
-                c_w3, c_h3 = st.columns(2)
-                with c_w3:
-                    grid_w3 = st.number_input("Larghezza (mm)", value=99.1, step=0.1, key="gw3")
-                    grid_mx3 = st.number_input("Margine Sx (mm)", value=4.7, step=0.1, key="gmx3")
-                    grid_gx3 = st.number_input("Gap Orizz. (mm)", value=2.5, step=0.1, key="ggx3")
-                with c_h3:
-                    grid_h3 = st.number_input("Altezza (mm)", value=38.1, step=0.1, key="gh3")
-                    grid_my3 = st.number_input("Margine Su (mm)", value=15.15, step=0.1, key="gmy3")
-                    grid_gy3 = st.number_input("Gap Vert. (mm)", value=0.0, step=0.1, key="ggy3")
-                    
-            cfg_grid_7163 = GridLabelCfg(w_mm=float(grid_w3), h_mm=float(grid_h3), margin_x_mm=float(grid_mx3), margin_y_mm=float(grid_my3), gap_x_mm=float(grid_gx3), gap_y_mm=float(grid_gy3))
-            
-            if st.button("Genera PDF Premium (2x7 - L7163)", type="primary"):
-                pdf_grid_7163 = make_grid_labels_7163_pdf(exploded_items, cfg_grid_7163, logo_bytes)
-                st.download_button("⬇️ Scarica PDF Fogli A4 (2x7)", data=pdf_grid_7163, file_name=f"etichette_premium_{sel_school}.pdf", mime="application/pdf")
+            cfg_log = LogisticaL7163Cfg(margin_x_mm=float(l_mx), margin_y_mm=float(l_my))
+            if st.button("Genera PDF Logistica L7163", type="primary"):
+                pdf_log = make_logistica_l7163_pdf(exploded_items, sel_school, cfg_log, logo_bytes)
+                st.download_button("⬇️ Scarica PDF Logistica", data=pdf_log, file_name=f"logistica_{sel_school}.pdf", mime="application/pdf")
 
     with tabs[2]: page_pending(df)
     with tabs[3]: page_bibbia(df)
