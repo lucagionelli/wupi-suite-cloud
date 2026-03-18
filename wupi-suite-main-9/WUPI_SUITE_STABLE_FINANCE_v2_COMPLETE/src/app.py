@@ -2073,7 +2073,7 @@ def main() -> None:
         prod = sel.split(" — ", 1)[1].strip()
         render_color_cards(df, sku, prod, confirmed, proj_dir)
 
-   with tabs[1]:
+    with tabs[1]:
         st.subheader("Generatore Etichette")
         
         # Aggiungiamo la terza tab per la logistica
