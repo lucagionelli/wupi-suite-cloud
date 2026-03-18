@@ -1038,17 +1038,15 @@ def make_logistica_l7163_pdf(items: list[dict], school_name: str, cfg: Logistica
 
                 # --- FILA SUPERIORE ---
                 
-                # 1. TAGLIA (Top-Left) - Riduzione dinamica font > 3 caratteri
+                # 1. TAGLIA (Top-Left)
                 taglia_txt = item['taglia'].upper()
                 if taglia_txt != "UNICA" and taglia_txt != "":
-                    # LOGICA TAGLIA: 30pt se corta, 20pt se lunga (>3 char)
                     fsize_taglia = 20 if len(taglia_txt) > 3 else 30
                     c.setFont("Helvetica-Bold", fsize_taglia)
-                    # Aggiustamento verticale per centratura estetica
                     y_offset = 3*mm if fsize_taglia == 20 else 4.5*mm
                     c.drawCentredString(x_label + col_w/2, mid_y + (row_h/2) - y_offset, taglia_txt)
 
-                # 2. MODELLO (Top-Center) - Centrato orizzontalmente e verticalmente
+                # 2. MODELLO (Top-Center)
                 c.setFont("Helvetica-Bold", 9)
                 words = item['prodotto'].upper().split()
                 line_space = 3.5 * mm
@@ -1074,7 +1072,8 @@ def make_logistica_l7163_pdf(items: list[dict], school_name: str, cfg: Logistica
                     c.rect(rx, ry, rect_w, rect_h, stroke=0, fill=1)
                     if hex_val.upper() in ["#FFFFFF", "#EFEBE1"]:
                         c.setStrokeColor(colors.grey)
-                        c.rect(rx, ry, rect_w, rect_h, stroke=0.5, fill=0)
+                        c.setLineWidth(0.5) # FIX: impostiamo lo spessore qui
+                        c.rect(rx, ry, rect_w, rect_h, stroke=1, fill=0) # E qui usiamo 1 (True)
                     c.restoreState()
 
                 # --- FILA INFERIORE ---
@@ -1103,8 +1102,7 @@ def make_logistica_l7163_pdf(items: list[dict], school_name: str, cfg: Logistica
                     l_w = l_h * (img_w / img_h)
                     c.drawImage(logo_img, x_label + 2*col_w + (col_w - l_w)/2, y_label + (row_h - l_h)/2, width=l_w, height=l_h, preserveAspectRatio=True, mask="auto")
 
-        if item_idx < total_items:
-            c.showPage()
+        c.showPage()
     
     c.save()
     buf.seek(0)
