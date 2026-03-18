@@ -2084,7 +2084,7 @@ def main() -> None:
         prod = sel.split(" — ", 1)[1].strip()
         render_color_cards(df, sku, prod, confirmed, proj_dir)
 
-       with tabs[1]:
+    with tabs[1]:
         st.subheader("Generatore Etichette")
         
         # Creiamo TRE sotto-schede: Buste, 3x7 e Premium 7163 (2x7)
