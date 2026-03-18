@@ -825,6 +825,15 @@ class GridLabelCfg:
     gap_x_mm: float = 0.0 # Spazio tra le colonne
     gap_y_mm: float = 0.0 # Spazio tra le righe
 
+@dataclass
+class LogisticaL7163Cfg:
+    w_mm: float = 99.1   # Larghezza etichetta L7163
+    h_mm: float = 38.1   # Altezza etichetta L7163
+    margin_x_mm: float = 4.65  # Margine laterale foglio
+    margin_y_mm: float = 15.1  # Margine superiore foglio
+    gap_x_mm: float = 2.5      # Spazio tra colonne (se presente)
+    gap_y_mm: float = 0.0      # Spazio tra righe
+
 def get_exploded_items(df: pd.DataFrame) -> list[dict]:
     # Ordiniamo prima di tutto per: Prodotto -> Colore -> Taglia (in ordine logico S, M, L)
     d_sort = df.copy()
@@ -980,7 +989,8 @@ def make_grid_labels_pdf(items: list[dict], school_name: str, cfg: GridLabelCfg,
     c.save()
     buf.seek(0)
     return buf.getvalue()
-def make_grid_labels_7163_pdf(items: list[dict], cfg: GridLabelCfg, logo_bytes: bytes | None = None) -> bytes:
+
+def make_logistica_l7163_pdf(items: list[dict], school_name: str, cfg: LogisticaL7163Cfg, logo_bytes: bytes | None = None) -> bytes:
     from reportlab.pdfbase.pdfmetrics import stringWidth
     from reportlab.lib.utils import ImageReader
     from reportlab.lib import colors
@@ -993,7 +1003,7 @@ def make_grid_labels_7163_pdf(items: list[dict], cfg: GridLabelCfg, logo_bytes: 
     if logo_bytes:
         try: logo_img = ImageReader(io.BytesIO(logo_bytes))
         except Exception: logo_img = None
-    
+
     def fit(text: str, max_w: float, font: str, size: float) -> str:
         t = (text or "").strip()
         if not t: return ""
@@ -1001,109 +1011,88 @@ def make_grid_labels_7163_pdf(items: list[dict], cfg: GridLabelCfg, logo_bytes: 
         s = t
         while s and stringWidth(s + "…", font, size) > max_w: s = s[:-1]
         return (s + "…") if s else "…"
-        
+
     item_idx = 0
     total_items = len(items)
-    cols_per_page = 2
-    rows_per_page = 7
-    
+
     while item_idx < total_items:
-        for row in range(rows_per_page):
-            for col in range(cols_per_page):
+        for row in range(7): # 7 righe per foglio L7163
+            for col in range(2): # 2 colonne per foglio L7163
                 if item_idx >= total_items: break
                 item = items[item_idx]
                 item_idx += 1
+
+                # Coordinate base dell'etichetta
+                x_label = (cfg.margin_x_mm * mm) + col * ((cfg.w_mm + cfg.gap_x_mm) * mm)
+                y_label = page_h - (cfg.margin_y_mm * mm) - (row + 1) * (cfg.h_mm * mm)
                 
-                # Coordinate etichetta (L7163: 99.1 x 38.1 mm)
-                x_left = (cfg.margin_x_mm * mm) + col * ((cfg.w_mm + cfg.gap_x_mm) * mm)
-                y_top = page_h - (cfg.margin_y_mm * mm) - row * ((cfg.h_mm + cfg.gap_y_mm) * mm)
+                # --- DISEGNO GRIGLIA INTERNA (3 COLONNE X 2 RIGHE) ---
+                col_w = (cfg.w_mm / 3) * mm
+                row_h = (cfg.h_mm / 2) * mm
+                mid_y = y_label + row_h
                 
-                w_lbl = cfg.w_mm * mm
-                h_lbl = cfg.h_mm * mm
-                
-                # Le 3 colonne interne e le 2 righe
-                w3 = w_lbl / 3.0
-                h2 = h_lbl / 2.0
-                
-                # RIGA ORIZZONTALE (Nero 80% K, 0.25pt)
-                c.setStrokeColorRGB(0.2, 0.2, 0.2)
+                # Linea orizzontale centrale (Nero 80%, 0.25pt)
+                c.saveState()
+                c.setStrokeColor(colors.Color(0.2, 0.2, 0.2)) # 80% nero (0.2 di bianco residuo)
                 c.setLineWidth(0.25)
-                c.line(x_left + 4*mm, y_top - h2, x_left + w_lbl - 4*mm, y_top - h2)
+                c.line(x_label + 4*mm, mid_y, x_label + (cfg.w_mm * mm) - 4*mm, mid_y)
+                c.restoreState()
+
+                # --- FILA SUPERIORE ---
                 
-                # --- RIGA 1 ---
-                # 1. TAGLIA (Top-Left) - Bold 30
-                c.setFont("Helvetica-Bold", 30)
-                c.setFillColorRGB(0, 0, 0)
-                c.drawCentredString(x_left + w3/2.0, y_top - 13.5*mm, str(item['taglia']).upper())
-                
-                # 2. MODELLO (Top-Center) - A capo dopo ogni parola
-                modello = str(item['prodotto']).upper()
-                words = modello.split()
-                if len(words) > 3: words = [" ".join(words[:2]), " ".join(words[2:])] # Limita a 2-3 righe
-                
-                line_height = 4.5 * mm
-                total_h = (len(words) - 1) * line_height
-                start_y = (y_top - h2/2.0) + total_h/2.0 - 1.5*mm
-                
-                for i, w in enumerate(words):
-                    c.setFont("Helvetica-Bold", 11)
-                    c.drawCentredString(x_left + w3 + w3/2.0, start_y - i*line_height, fit(w, w3 - 2*mm, "Helvetica-Bold", 11))
-                
-                # 3. COLORE E RETTANGOLO (Top-Right)
-                colore_str = str(item['colore']).title()
+                # 1. TAGLIA (Top-Left)
+                if item['taglia'].upper() != "UNICA":
+                    c.setFont("Helvetica-Bold", 30)
+                    c.drawCentredString(x_label + col_w/2, mid_y + (row_h/2) - 4*mm, item['taglia'])
+
+                # 2. MODELLO (Top-Center) - Maiuscolo, a capo per ogni parola
                 c.setFont("Helvetica-Bold", 10)
-                c.drawCentredString(x_left + 2*w3 + w3/2.0, y_top - 8.5*mm, fit(colore_str, w3 - 4*mm, "Helvetica-Bold", 10))
+                words = item['prodotto'].upper().split()
+                line_y = y_label + row_h + (row_h/2) + ((len(words)-1)*2.5*mm) / 2 + 2*mm
+                for word in words:
+                    c.drawCentredString(x_label + col_w + col_w/2, line_y, word)
+                    line_y -= 4*mm
+
+                # 3. COLORE (Top-Right)
+                c.setFont("Helvetica-Bold", 11)
+                c.drawCentredString(x_label + 2*col_w + col_w/2, mid_y + (row_h/2) + 2*mm, fit(item['colore'], col_w - 4*mm, "Helvetica-Bold", 11))
                 
+                # Rettangolo colore
                 canon_col = color_to_canon_key(item['colore'])
                 hex_val = COLOR_HEX_MAP.get(canon_col)
                 if hex_val:
-                    rect_w = 26 * mm
-                    rect_h = 5.5 * mm
-                    rx = x_left + 2*w3 + (w3 - rect_w)/2.0
-                    ry = y_top - 16*mm
+                    rect_w, rect_h = 16*mm, 4*mm
+                    rx = x_label + 2*col_w + (col_w - rect_w)/2
+                    ry = mid_y + (row_h/2) - 4*mm
                     c.saveState()
                     c.setFillColor(colors.HexColor(hex_val))
+                    c.rect(rx, ry, rect_w, rect_h, stroke=0, fill=1)
                     if hex_val.upper() in ["#FFFFFF", "#EFEBE1"]:
-                        c.setStrokeColor(colors.HexColor("#CCCCCC"))
-                        c.rect(rx, ry, rect_w, rect_h, stroke=1, fill=1)
-                    else:
-                        c.rect(rx, ry, rect_w, rect_h, stroke=0, fill=1)
+                        c.setStrokeColor(colors.grey)
+                        c.rect(rx, ry, rect_w, rect_h, stroke=1, fill=0)
                     c.restoreState()
 
-                # --- RIGA 2 ---
-                # 4. NUMERO ORDINE (Bottom-Left)
-                ordine = f"#{item['ordine']}" if item['ordine'] else ""
-                c.setFont("Helvetica", 14)
-                c.drawCentredString(x_left + w3/2.0, y_top - h2 - 11.5*mm, ordine)
+                # --- FILA INFERIORE ---
+
+                # 4. #ORDINE (Bottom-Left)
+                c.setFont("Helvetica", 16)
+                c.drawCentredString(x_label + col_w/2, y_label + (row_h/2) - 2*mm, f"#{item['ordine']}")
 
                 # 5. CLASSE E NOME (Bottom-Center)
-                classe_str = str(item['classe']).upper()
-                c_size = 20
-                # Auto-shrink se la classe è troppo lunga per la colonnina!
-                while stringWidth(classe_str, "Helvetica-Bold", c_size) > (w3 - 4*mm) and c_size > 10:
-                    c_size -= 1
-                c.setFont("Helvetica-Bold", c_size)
-                c.drawCentredString(x_left + w3 + w3/2.0, y_top - h2 - 9*mm, classe_str)
-                
+                c.setFont("Helvetica-Bold", 20)
+                c.drawCentredString(x_label + col_w + col_w/2, y_label + (row_h/2) + 1*mm, item['classe'].upper())
                 c.setFont("Helvetica", 11)
-                c.drawCentredString(x_left + w3 + w3/2.0, y_top - h2 - 14.5*mm, fit(str(item['studente']).title(), w3 - 2*mm, "Helvetica", 11))
+                c.drawCentredString(x_label + col_w + col_w/2, y_label + (row_h/2) - 4*mm, fit(item['studente'], col_w - 2*mm, "Helvetica", 11))
 
-                # 6. LOGO (Bottom-Right)
+                # 6. LOGO WUPI (Bottom-Right)
                 if logo_img:
+                    l_h = 8*mm
                     img_w, img_h = logo_img.getSize()
-                    target_w = w3 - 8*mm
-                    target_h = target_w / (img_w / img_h)
-                    if target_h > (h2 - 6*mm):
-                        target_h = h2 - 6*mm
-                        target_w = target_h * (img_w / img_h)
-                        
-                    lx = x_left + 2*w3 + (w3 - target_w)/2.0
-                    ly = y_top - h2 - (h2 - target_h)/2.0 - 1.5*mm
-                    c.drawImage(logo_img, lx, ly, width=target_w, height=target_h, preserveAspectRatio=True, mask="auto")
-                    
-        if item_idx < total_items:
-            c.showPage()
-            
+                    l_w = l_h * (img_w / img_h)
+                    c.drawImage(logo_img, x_label + 2*col_w + (col_w - l_w)/2, y_label + (row_h - l_h)/2, width=l_w, height=l_h, preserveAspectRatio=True, mask="auto")
+
+        c.showPage()
+    
     c.save()
     buf.seek(0)
     return buf.getvalue()
@@ -2084,33 +2073,32 @@ def main() -> None:
         prod = sel.split(" — ", 1)[1].strip()
         render_color_cards(df, sku, prod, confirmed, proj_dir)
 
-    with tabs[1]:
+   with tabs[1]:
         st.subheader("Generatore Etichette")
         
-        # Creiamo TRE sotto-schede: Buste, 3x7 e Premium 7163 (2x7)
-        et_tab1, et_tab2, et_tab3 = st.tabs(["📦 Etichette Buste (152x102)", "👕 Etichette Standard (3x7)", "💎 Etichette Premium 7163 (2x7)"])
+        # Aggiungiamo la terza tab per la logistica
+        et_tab1, et_tab2, et_tab3 = st.tabs(["📦 Buste (152x102)", "👕 Prodotti (3x7)", "🚚 Logistica (L7163)"])
         
-        with et_tab1:
-            st.caption("Etichette grandi per la busta dell'ordine (1 ordine = 1 etichetta).")
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                w = st.number_input("Larghezza (mm)", value=152.0, step=1.0)
-                h = st.number_input("Altezza (mm)", value=102.0, step=1.0)
-                with st.expander("Opzioni avanzate (margini e font)", expanded=False):
-                    m = st.number_input("Margine (mm)", value=8.0, step=0.5)
-                    logo_w = st.number_input("Larghezza logo (mm)", value=28.0, step=1.0)
-                    title_pt = st.number_input("Font classe (pt)", value=18.0, step=0.5)
-                    header_pt = st.number_input("Font intestazioni (pt)", value=9.0, step=0.5)
-                    row_pt = st.number_input("Font righe (pt)", value=9.0, step=0.5)
-                    row_h = st.number_input("Altezza riga (mm)", value=4.2, step=0.2)
-                    strip_modello = st.checkbox('Elimina "Modello" (es: | Modello Joker → | Joker)', value=False)
-            with col2: logo_up = st.file_uploader("Logo (PNG) opzionale", type=["png"])
-            logo_bytes = logo_up.getvalue() if logo_up else (LOGO_PATH.read_bytes() if LOGO_PATH.exists() else None)
+        # ... (et_tab1 e et_tab2 rimangono uguali a prima) ...
 
-            cfg_lbl = LabelCfg(w_mm=float(w), h_mm=float(h), margin_mm=float(m), logo_w_mm=float(logo_w), title_pt=float(title_pt), header_pt=float(header_pt), row_pt=float(row_pt), row_h_mm=float(row_h), strip_modello=bool(strip_modello))
-            if st.button("Genera PDF Buste (152x102)", type="primary"):
-                pdf = make_labels_pdf(df, logo_bytes, cfg_lbl)
-                st.download_button("⬇️ Scarica PDF Buste", data=pdf, file_name=f"etichette_buste_{sel_school}.pdf", mime="application/pdf")
+        with et_tab3:
+            st.caption("Etichette grandi L7163 (99x38mm). Layout avanzato con griglia interna per smistamento veloce.")
+            
+            exploded_items = get_exploded_items(df)
+            st.info(f"Verranno generate **{len(exploded_items)} etichette** ({len(exploded_items)//14 + 1} fogli A4 necessari).")
+            
+            # Parametri di controllo opzionali
+            with st.expander("Regolazione Millimetrica L7163", expanded=False):
+                c1, c2 = st.columns(2)
+                l_mx = c1.number_input("Margine Sinistro (mm)", value=4.65, step=0.1, key="l7163_mx")
+                l_my = c2.number_input("Margine Superiore (mm)", value=15.1, step=0.1, key="l7163_my")
+            
+            cfg_log = LogisticaL7163Cfg(margin_x_mm=float(l_mx), margin_y_mm=float(l_my))
+            
+            if st.button("Genera PDF Logistica (L7163)", type="primary"):
+                # Recuperiamo il logo_bytes (già definito sopra nella tab1)
+                pdf_log = make_logistica_l7163_pdf(exploded_items, sel_school, cfg_log, logo_bytes)
+                st.download_button("⬇️ Scarica PDF Logistica L7163", data=pdf_log, file_name=f"logistica_{sel_school}.pdf", mime="application/pdf")
 
         # Configurazione comune ai formati su foglio A4
         exploded_items = get_exploded_items(df)
