@@ -1016,82 +1016,95 @@ def make_logistica_l7163_pdf(items: list[dict], school_name: str, cfg: Logistica
     total_items = len(items)
 
     while item_idx < total_items:
-        for row in range(7): # 7 righe per foglio L7163
-            for col in range(2): # 2 colonne per foglio L7163
+        for row in range(7):
+            for col in range(2):
                 if item_idx >= total_items: break
                 item = items[item_idx]
                 item_idx += 1
 
-                # Coordinate base dell'etichetta
                 x_label = (cfg.margin_x_mm * mm) + col * ((cfg.w_mm + cfg.gap_x_mm) * mm)
                 y_label = page_h - (cfg.margin_y_mm * mm) - (row + 1) * (cfg.h_mm * mm)
                 
-                # --- DISEGNO GRIGLIA INTERNA (3 COLONNE X 2 RIGHE) ---
                 col_w = (cfg.w_mm / 3) * mm
                 row_h = (cfg.h_mm / 2) * mm
                 mid_y = y_label + row_h
                 
                 # Linea orizzontale centrale (Nero 80%, 0.25pt)
                 c.saveState()
-                c.setStrokeColor(colors.Color(0.2, 0.2, 0.2)) # 80% nero (0.2 di bianco residuo)
+                c.setStrokeColor(colors.Color(0.2, 0.2, 0.2)) 
                 c.setLineWidth(0.25)
                 c.line(x_label + 4*mm, mid_y, x_label + (cfg.w_mm * mm) - 4*mm, mid_y)
                 c.restoreState()
 
                 # --- FILA SUPERIORE ---
                 
-                # 1. TAGLIA (Top-Left)
-                if item['taglia'].upper() != "UNICA":
-                    c.setFont("Helvetica-Bold", 30)
-                    c.drawCentredString(x_label + col_w/2, mid_y + (row_h/2) - 4*mm, item['taglia'])
+                # 1. TAGLIA (Top-Left) - Riduzione dinamica font > 3 caratteri
+                taglia_txt = item['taglia'].upper()
+                if taglia_txt != "UNICA" and taglia_txt != "":
+                    # LOGICA TAGLIA: 30pt se corta, 20pt se lunga (>3 char)
+                    fsize_taglia = 20 if len(taglia_txt) > 3 else 30
+                    c.setFont("Helvetica-Bold", fsize_taglia)
+                    # Aggiustamento verticale per centratura estetica
+                    y_offset = 3*mm if fsize_taglia == 20 else 4.5*mm
+                    c.drawCentredString(x_label + col_w/2, mid_y + (row_h/2) - y_offset, taglia_txt)
 
-                # 2. MODELLO (Top-Center) - Maiuscolo, a capo per ogni parola
-                c.setFont("Helvetica-Bold", 10)
+                # 2. MODELLO (Top-Center) - Centrato orizzontalmente e verticalmente
+                c.setFont("Helvetica-Bold", 9)
                 words = item['prodotto'].upper().split()
-                line_y = y_label + row_h + (row_h/2) + ((len(words)-1)*2.5*mm) / 2 + 2*mm
+                line_space = 3.5 * mm
+                total_text_h = len(words) * line_space
+                start_y = (mid_y + row_h/2) + (total_text_h/2) - line_space + 1*mm
+                
                 for word in words:
-                    c.drawCentredString(x_label + col_w + col_w/2, line_y, word)
-                    line_y -= 4*mm
+                    c.drawCentredString(x_label + col_w + col_w/2, start_y, fit(word, col_w - 2*mm, "Helvetica-Bold", 9))
+                    start_y -= line_space
 
                 # 3. COLORE (Top-Right)
-                c.setFont("Helvetica-Bold", 11)
-                c.drawCentredString(x_label + 2*col_w + col_w/2, mid_y + (row_h/2) + 2*mm, fit(item['colore'], col_w - 4*mm, "Helvetica-Bold", 11))
+                c.setFont("Helvetica-Bold", 10)
+                c.drawCentredString(x_label + 2*col_w + col_w/2, mid_y + (row_h/2) + 2*mm, fit(item['colore'], col_w - 4*mm, "Helvetica-Bold", 10))
                 
-                # Rettangolo colore
                 canon_col = color_to_canon_key(item['colore'])
                 hex_val = COLOR_HEX_MAP.get(canon_col)
                 if hex_val:
                     rect_w, rect_h = 16*mm, 4*mm
                     rx = x_label + 2*col_w + (col_w - rect_w)/2
-                    ry = mid_y + (row_h/2) - 4*mm
+                    ry = mid_y + (row_h/2) - 4.5*mm
                     c.saveState()
                     c.setFillColor(colors.HexColor(hex_val))
                     c.rect(rx, ry, rect_w, rect_h, stroke=0, fill=1)
                     if hex_val.upper() in ["#FFFFFF", "#EFEBE1"]:
                         c.setStrokeColor(colors.grey)
-                        c.rect(rx, ry, rect_w, rect_h, stroke=1, fill=0)
+                        c.rect(rx, ry, rect_w, rect_h, stroke=0.5, fill=0)
                     c.restoreState()
 
                 # --- FILA INFERIORE ---
 
                 # 4. #ORDINE (Bottom-Left)
-                c.setFont("Helvetica", 16)
+                c.setFont("Helvetica", 14)
                 c.drawCentredString(x_label + col_w/2, y_label + (row_h/2) - 2*mm, f"#{item['ordine']}")
 
                 # 5. CLASSE E NOME (Bottom-Center)
-                c.setFont("Helvetica-Bold", 20)
-                c.drawCentredString(x_label + col_w + col_w/2, y_label + (row_h/2) + 1*mm, item['classe'].upper())
+                class_fsize = 20
+                class_text = item['classe'].upper()
+                max_w = col_w - 4*mm
+                while class_fsize > 10 and stringWidth(class_text, "Helvetica-Bold", class_fsize) > max_w:
+                    class_fsize -= 1
+                
+                c.setFont("Helvetica-Bold", class_fsize)
+                c.drawCentredString(x_label + col_w + col_w/2, y_label + (row_h/2) + 1.5*mm, fit(class_text, max_w, "Helvetica-Bold", class_fsize))
+                
                 c.setFont("Helvetica", 11)
                 c.drawCentredString(x_label + col_w + col_w/2, y_label + (row_h/2) - 4*mm, fit(item['studente'], col_w - 2*mm, "Helvetica", 11))
 
                 # 6. LOGO WUPI (Bottom-Right)
                 if logo_img:
-                    l_h = 8*mm
+                    l_h = 7.5*mm
                     img_w, img_h = logo_img.getSize()
                     l_w = l_h * (img_w / img_h)
                     c.drawImage(logo_img, x_label + 2*col_w + (col_w - l_w)/2, y_label + (row_h - l_h)/2, width=l_w, height=l_h, preserveAspectRatio=True, mask="auto")
 
-        c.showPage()
+        if item_idx < total_items:
+            c.showPage()
     
     c.save()
     buf.seek(0)
